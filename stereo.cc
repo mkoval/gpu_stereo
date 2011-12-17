@@ -6,6 +6,7 @@
 
 using cv::Mat;
 using cv::Range;
+using cv::Size;
 using cv::StereoBM;
 using cv::gpu::GpuMat;
 using cv::gpu::StereoBM_GPU;
@@ -32,9 +33,54 @@ void match_opencv_gpu(Mat const &left, Mat const &right, Mat &disparity)
     disparity = disparity_gpu;
 }
 
+void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
+{
+    static const Size blur_size(3, 3);
+    static const int win_size = 25;
+    static const int log_size = 1;
+    static const int max_disp = 64;
+    int win_half = win_size / 2;
+
+    disparity.create(left.rows, left.cols, CV_32FC1);
+    disparity.setTo(0.0f);
+
+    // Compute the Laplacian of the Gaussian (LoG) of both images.
+    Mat left_gaussian, left_log;
+    cv::GaussianBlur(left, left_gaussian, blur_size, 0.0, 0.0);
+    cv::Laplacian(left_gaussian, left_log, CV_64FC1, log_size);
+
+    Mat right_gaussian, right_log;
+    cv::GaussianBlur(right, right_gaussian, blur_size, 0.0, 0.0);
+    cv::Laplacian(right_gaussian, right_log, CV_64FC1, log_size);
+
+    for (int row = 0; row < left.rows; row++)
+    for (int col = max_disp + win_half; col < left.cols - win_half; col++) {
+        double best_sad = INFINITY;
+        int best_offset = 0;
+
+        Range patch_rows(row - win_half, row + win_half);
+        Range patch_cols_left(col - win_half, col + win_half);
+        Mat patch_left = left_log(patch_rows, patch_cols_left);
+
+        // Features in the right image will be left of the corresponding
+        // feature in the left image, so we only need to consider candidate
+        // pixels to the left of our current pixel.
+        for (int offset = 0; offset <= max_disp; offset++) {
+            Range patch_cols_right(col - offset - win_half, col - offset + win_half);
+            Mat patch_right = right_log(patch_rows, patch_cols_right);
+
+            double sad = cv::norm(patch_left, patch_right, cv::NORM_L1);
+            if (sad < best_sad) {
+                best_offset = offset;
+                best_sad = sad;
+            } 
+        }
+        disparity.at<float>(row, col) = best_offset;
+    }
+}
+
 int main(int argc, char **argv)
 {
-
     if (argc < 3) {
         std::cerr << "err: incorrect number of arguments"         << std::endl
                   << "usage: ./stereo <left image> <right image>" << std::endl;
