@@ -1,0 +1,4 @@
+images/
+*.o
+.DS_Store
+stereo
