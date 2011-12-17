@@ -1,5 +1,5 @@
 TARGET  = stereo
-CFLAGS  = `pkg-config --cflags opencv` -Wall -Wno-system-headers
+CFLAGS  = `pkg-config --cflags opencv` -Wall -O3 -march=core2
 LDFLAGS = `pkg-config --libs opencv` -lopencv_gpu
 OBJECTS = stereo.cc.o
 

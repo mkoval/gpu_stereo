@@ -15,7 +15,7 @@ static int const max_disparity  = StereoBM_GPU::DEFAULT_NDISP;
 static int const window_size    = StereoBM_GPU::DEFAULT_WINSZ;
 static int const texture_thresh = 0;
 
-void match_opencv_cpu(Mat const &left, Mat const &right, Mat &disparity)
+static void match_opencv_cpu(Mat const &left, Mat const &right, Mat &disparity)
 {
     StereoBM matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
 
@@ -23,7 +23,7 @@ void match_opencv_cpu(Mat const &left, Mat const &right, Mat &disparity)
     matcher(left, right, disparity);
 }
 
-void match_opencv_gpu(Mat const &left, Mat const &right, Mat &disparity)
+static void match_opencv_gpu(Mat const &left, Mat const &right, Mat &disparity)
 {
     StereoBM_GPU matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
     matcher.avergeTexThreshold = texture_thresh;
@@ -33,7 +33,7 @@ void match_opencv_gpu(Mat const &left, Mat const &right, Mat &disparity)
     disparity = disparity_gpu;
 }
 
-void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
+static void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
 {
     static const Size blur_size(3, 3);
     static const int win_size = 25;
@@ -53,7 +53,7 @@ void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
     cv::GaussianBlur(right, right_gaussian, blur_size, 0.0, 0.0);
     cv::Laplacian(right_gaussian, right_log, CV_64FC1, log_size);
 
-    for (int row = 0; row < left.rows; row++)
+    for (int row = win_half; row < left.rows - win_half; row++)
     for (int col = max_disp + win_half; col < left.cols - win_half; col++) {
         double best_sad = INFINITY;
         int best_offset = 0;
@@ -65,11 +65,11 @@ void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
         // Features in the right image will be left of the corresponding
         // feature in the left image, so we only need to consider candidate
         // pixels to the left of our current pixel.
-        for (int offset = 0; offset <= max_disp; offset++) {
+        for (int offset = 0; offset < max_disp; offset++) {
             Range patch_cols_right(col - offset - win_half, col - offset + win_half);
             Mat patch_right = right_log(patch_rows, patch_cols_right);
 
-            double sad = cv::norm(patch_left, patch_right, cv::NORM_L1);
+            double sad = cv::norm(patch_left, patch_right, cv::NORM_L2);
             if (sad < best_sad) {
                 best_offset = offset;
                 best_sad = sad;
@@ -103,14 +103,20 @@ int main(int argc, char **argv)
     Mat disparity_gpu;
     match_opencv_gpu(left, right, disparity_gpu);
 
+    // Custom Implementation
+    Mat disparity_cust;
+    match_cpu(left, right, disparity_cust);
+
     // Render the 
-    Mat render(left.rows, 3*left.cols, CV_8UC1);
-    Mat render_left = render(Range::all(), Range(0, left.cols));
-    Mat render_cpu  = render(Range::all(), Range(left.cols, 2*left.cols));
+    Mat render(left.rows, 4*left.cols, CV_8UC1);
+    Mat render_left = render(Range::all(), Range(0*left.cols, 1*left.cols));
+    Mat render_cpu  = render(Range::all(), Range(1*left.cols, 2*left.cols));
     Mat render_gpu  = render(Range::all(), Range(2*left.cols, 3*left.cols));
+    Mat render_cust = render(Range::all(), Range(3*left.cols, 4*left.cols));
     left.copyTo(render_left);
-    cv::normalize(disparity_cpu, render_cpu, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-    cv::normalize(disparity_gpu, render_gpu, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::normalize(disparity_cpu,  render_cpu,  0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::normalize(disparity_gpu,  render_gpu,  0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::normalize(disparity_cust, render_cust, 0, 255, cv::NORM_MINMAX, CV_8UC1);
 
     cv::imshow("Stereo Pair", render);
     cv::waitKey();
