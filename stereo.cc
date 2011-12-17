@@ -16,7 +16,7 @@ static int const texture_thresh = 0;
 
 void match_opencv_cpu(Mat const &left, Mat const &right, Mat &disparity)
 {
-    static StereoBM matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
+    StereoBM matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
 
     disparity.create(left.rows, left.cols, CV_32FC1);
     matcher(left, right, disparity);
@@ -24,7 +24,7 @@ void match_opencv_cpu(Mat const &left, Mat const &right, Mat &disparity)
 
 void match_opencv_gpu(Mat const &left, Mat const &right, Mat &disparity)
 {
-    static StereoBM_GPU matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
+    StereoBM_GPU matcher(CV_STEREO_BM_BASIC, max_disparity, window_size);
     matcher.avergeTexThreshold = texture_thresh;
 
     GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
