@@ -8,6 +8,6 @@
 #include <opencv2/opencv.hpp>
 #pragma clang diagnostic pop
 
-void LaplacianOfGaussian(cv::Mat const &src, cv::Mat &dst);
+void MatchBM(cv::Mat const &left, cv::Mat const &right, cv::Mat &disparity);
 
 #endif
