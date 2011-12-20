@@ -8,6 +8,8 @@ using cv::Mat_;
 using cv::Scalar;
 using std::numeric_limits;
 
+static int DISPARITY_NONE = 0;
+
 template <typename T>
 static T abs(T x)
 {
@@ -59,8 +61,8 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
     convolve<Tin, int8_t, Tout, 9, 9>(src, dst, ker);
 }
 
-template <typename Tin, typename Tlog, typename Terr, typename Tout, int Wrows, int Wcols, int D>
-static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
+template <typename Tin, typename Tlog, typename Terr, typename Tout>
+static void MatchBM(Mat const &left, Mat const &right, Mat &disparity, int Wrows, int Wcols, int D)
 {
     CV_Assert(Wrows > 0 && Wcols > 0 && D >= 0);
     CV_Assert(left.rows == right.rows && left.rows >= Wrows
@@ -73,16 +75,28 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
     LaplacianOfGaussian<Tin, Tlog>(right, right_log);
 
     disparity.create(left.rows, left.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
-    disparity.setTo(0);
 
     for (int r0 = Wrows/2; r0 < left.rows - Wrows/2; r0++) {
         Tout *const disparity_row = disparity.ptr<Tout>(r0);
 
-        for (int c0 = Wcols/2 + D; c0 < left.cols - Wcols/2; c0++) {
+        // Initialize the borders of the disparity image. These pixels are
+        // guaranteed to have no correspondences.
+        for (int c0 = 0; c0 < Wcols/2; c0++) {
+            disparity_row[c0] = DISPARITY_NONE;
+        }
+        for (int c0 = left.cols - Wcols/2; c0 < left.cols; c0++) {
+            disparity_row[c0] = DISPARITY_NONE;
+        }
+
+        for (int c0 = Wcols/2; c0 < left.cols - Wcols/2; c0++) {
             Terr best_error     = numeric_limits<Terr>::max();
             Tout best_disparity = 0;
 
-            for (Tout d = 0; d <= D; d++) {
+            // Search for the pixel (r, c) in the right image that minimizes
+            // the sum of absolute difference (SAD) the window surrounding (r0,
+            // c0) in the left image.
+            int const Drow = std::min(D, c0 - Wcols/2);
+            for (Tout d = 0; d <= Drow; d++) {
                 Terr error = 0;
 
                 for (int dr = -Wrows/2; dr < Wrows/2; dr++) {
@@ -109,5 +123,5 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 
 void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
-    MatchBM<uint8_t, int16_t, int32_t, int32_t, 25, 25, 64>(left, right, disparity);
+    MatchBM<uint8_t, int16_t, int32_t, int32_t>(left, right, disparity, 25, 25, 64);
 }
