@@ -2,7 +2,7 @@ CXX  = clang++
 NVCC = nvcc
 LD   = clang++
 TARGET     = stereo
-CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -march=core2 -funroll-loops -Wno-system-headers
+CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -march=core2
 NVCCFLAGS :=
 LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu
 OBJECTS    = stereo.cc.o util.cc.o

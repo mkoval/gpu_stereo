@@ -1,12 +1,18 @@
 #include <stdint.h>
+#include <limits>
 #include "util.h"
-
-#include <iostream>
 
 using cv::DataType;
 using cv::Mat;
 using cv::Mat_;
 using cv::Scalar;
+using std::numeric_limits;
+
+template <typename T>
+static T abs(T x)
+{
+    return (x >= 0) ? x : -x;
+}
 
 template <typename Tin, typename Tker, typename Tout, int Krows, int Kcols>
 static void convolve(Mat const &src, Mat &dst, Mat const &ker)
@@ -53,7 +59,7 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
     convolve<Tin, int8_t, Tout, 9, 9>(src, dst, ker);
 }
 
-template <typename Tin, typename Tlog, typename Tout, int Wrows, int Wcols, int D>
+template <typename Tin, typename Tlog, typename Terr, typename Tout, int Wrows, int Wcols, int D>
 static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
     CV_Assert(Wrows > 0 && Wcols > 0 && D >= 0);
@@ -73,11 +79,11 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
         Tout *const disparity_row = disparity.ptr<Tout>(r0);
 
         for (int c0 = Wcols/2 + D; c0 < left.cols - Wcols/2; c0++) {
-            int best_error     = INT32_MAX;
-            int best_disparity = 0;
+            Terr best_error     = numeric_limits<Terr>::max();
+            Tout best_disparity = 0;
 
-            for (int d = 0; d <= D; d++) {
-                int32_t error = 0;
+            for (Tout d = 0; d <= D; d++) {
+                Terr error = 0;
 
                 for (int dr = -Wrows/2; dr < Wrows/2; dr++) {
                     int const r = r0 + dr;
@@ -87,7 +93,7 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
                     for (int dc = -Wcols/2; dc < Wcols/2; dc++) {
                         int const c_left  = c0 + dc;
                         int const c_right = c0 + dc - d;
-                        error += abs((int)left_row[c_left] - (int)right_row[c_right]);
+                        error += abs<Terr>((Terr)left_row[c_left] - (Terr)right_row[c_right]);
                     }
                 }
 
@@ -103,5 +109,5 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 
 void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
-    MatchBM<uint8_t, int16_t, int32_t, 25, 25, 64>(left, right, disparity);
+    MatchBM<uint8_t, int16_t, int32_t, int32_t, 25, 25, 64>(left, right, disparity);
 }
