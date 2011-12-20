@@ -56,48 +56,54 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
 template <typename Tin, typename Tlog, typename Tout, int Wrows, int Wcols, int D>
 static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
+    CV_Assert(Wrows > 0 && Wcols > 0 && D >= 0);
+    CV_Assert(left.rows == right.rows && left.rows >= Wrows
+           && left.cols == right.cols && left.cols >= Wcols);
+    CV_Assert(left.type()  == CV_MAKETYPE(DataType<Tin>::depth, 1)
+           && right.type() == CV_MAKETYPE(DataType<Tin>::depth, 1));
+
     Mat left_log, right_log;
     LaplacianOfGaussian<Tin, Tlog>(left, left_log);
     LaplacianOfGaussian<Tin, Tlog>(right, right_log);
 
-    disparity.create(left.rows, left.cols, CV_16U);
-    disparity.setTo(0.0f);
+    disparity.create(left.rows, left.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
+    disparity.setTo(0);
 
     for (int r0 = Wrows/2; r0 < left.rows - Wrows/2; r0++) {
         Tout *const disparity_row = disparity.ptr<Tout>(r0);
 
-        for (int c0 = Wcols/2; c0 < left.cols - Wcols/2; c0++) {
-            uint16_t best_error     = INT16_MAX;
-            uint16_t best_disparity = 0;
+        for (int c0 = Wcols/2 + D; c0 < left.cols - Wcols/2; c0++) {
+            int32_t best_error     = INT32_MAX;
+            int     best_disparity = 0;
 
-            for (int disparity = 0; disparity <= D; disparity++) {
-                uint16_t error = 0;
+            for (int d = 0; d <= D; d++) {
+                int32_t error = 0;
 
-                for (int dr = Wrows; dr < Wrows; dr++) {
-                    int const r = r0 + dr - Wrows / 2;
+                for (int r = r0 - Wrows/2; r < r0 + Wrows/2; r++) {
                     Tlog const *const left_row  = left_log.ptr<Tlog>(r);
                     Tlog const *const right_row = right_log.ptr<Tlog>(r);
 
-                    for (int dc = Wcols; dc < Wcols; dc++) {
-                        int const c = c0 + dc - Wcols / 2;
-                        error += abs(left_row[c] - right_row[c]);
+                    for (int c = std::max(c0 - d - Wcols/2, 0); c < c0 - d + Wcols/2; c++) {
+                        error += abs((int32_t)left_row[c] - (int32_t)right_row[c]);
                     }
                 }
 
+                cv::Range rows(r0 - Wrows/2, r0 + Wrows/2);
+                cv::Range cols_left(c0 - Wcols/2, c0 + Wcols/2);
+                cv::Range cols_right(c0 - d - Wcols/2, c0 - d + Wcols/2);
+                error = cv::norm(left_log(rows, cols_left), right_log(rows, cols_right), cv::NORM_L1);
+
                 if (error < best_error) {
                     best_error     = error;
-                    best_disparity = disparity;
+                    best_disparity = d;
                 }
             }
-
             disparity_row[c0] = best_disparity;
         }
     }
-
-    LaplacianOfGaussian<Tin, Tlog>(left, disparity);
 }
 
 void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
-    MatchBM<uint8_t, int16_t, int16_t, 21, 21, 20>(left, right, disparity);
+    MatchBM<uint8_t, int16_t, int32_t, 25, 25, 64>(left, right, disparity);
 }
