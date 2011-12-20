@@ -140,5 +140,5 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity, int Wrows
 
 void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
 {
-    MatchBM<uint8_t, int16_t, int16_t, int16_t>(left, right, disparity, 25, 25, 64);
+    MatchBM<uint8_t, int16_t, int32_t, int32_t>(left, right, disparity, 25, 25, 64);
 }

@@ -20,12 +20,12 @@ $(TARGET): $(OBJECTS)
 	@echo "LD $@"
 	@$(LD) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
-%.cc.o: %.cc
+%.cc.o: %.cc Makefile
 	@echo "CXX $@"
-	@$(CXX) $(CXXFLAGS) -c -o $@ $^
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-%.cu.o: %.cu
+%.cu.o: %.cu Makefile
 	@echo "NVCC $@"
-	@$(NVCC) $(NVCCFLAGS) -c -o $@ $^
+	@$(NVCC) $(NVCCFLAGS) -c -o $@ $<
 
 # vim: noet ts=4 sw=4
