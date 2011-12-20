@@ -2,7 +2,7 @@
 #include <limits>
 #include <vector>
 #include <stdint.h>
-#include "util.h"
+#include "bm_cpu.hpp"
 
 using cv::DataType;
 using cv::Mat;
@@ -61,6 +61,11 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
         0, 1, 1,   2,   2,   2, 1, 1, 0
     );
     convolve<Tin, int8_t, Tout>(src, dst, ker);
+}
+
+void LaplacianOfGaussian(Mat const &src, Mat &dst)
+{
+    LaplacianOfGaussian<uint8_t, int16_t>(src, dst);
 }
 
 template <typename Tin, typename Tlog, typename Terr, typename Tout>

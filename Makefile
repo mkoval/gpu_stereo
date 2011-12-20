@@ -2,10 +2,10 @@ CXX  = clang++
 NVCC = nvcc
 LD   = clang++
 TARGET     = stereo
-CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -march=core2
+CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -march=core2 -flto
 NVCCFLAGS :=
 LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu
-OBJECTS    = stereo.cc.o util.cc.o
+OBJECTS    = stereo.cpp.o bm_cpu.cpp.o
 
 .PHONY: all clean
 .SECONDARY:
@@ -20,7 +20,7 @@ $(TARGET): $(OBJECTS)
 	@echo "LD $@"
 	@$(LD) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
-%.cc.o: %.cc Makefile
+%.cpp.o: %.cpp Makefile
 	@echo "CXX $@"
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 

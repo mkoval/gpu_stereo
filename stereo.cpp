@@ -12,7 +12,7 @@
 #include <opencv2/gpu/gpu.hpp>
 #pragma clang diagnostic pop
 
-#include "util.h"
+#include "bm_cpu.hpp"
 
 using cv::Mat;
 using cv::Range;
