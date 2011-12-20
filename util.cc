@@ -79,14 +79,15 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
 
     disparity.create(left.rows, left.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
 
-    // Precompute the SAD kernel along each row in O(w*h*D) complexity. This
-    // reduces the complexity of the disparity calculation from O(w*h*D^2) to
-    // O(w*h*D), which is a substantial speedup when D = O(w).
+    // Precompute a vertical integral image of the SAD kernel along each row in
+    // O(w*h*D) + O(w*h) complexity. This reduces the complexity of the
+    // disparity calculation from O(w*h*D^2) to O(w*h*D).
     vector<Mat> precomp_sad(D + 1);
     for (int d = 0; d <= D; d++) {
         Mat sad(left.rows, left.cols, CV_MAKETYPE(DataType<Terr>::depth, 1),
                 Scalar::all(0));
 
+        // Compute the SAD image.
         for (int r0 = 0; r0 < left.rows; r0++) {
             Tin const *const left_row  = left.ptr<Tin>(r0);
             Tin const *const right_row = right.ptr<Tin>(r0);
@@ -97,6 +98,18 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
                 sad_row[c0] += abs<Terr>((Terr)left_row[c] - (Terr)right_row[c - d]);
             }
         }
+
+        // Sum along columns to calculate the integral image.
+        Terr const *prev_row = sad.ptr<Terr>(0);
+        for (int r = 1; r < left.rows; r++) {
+            Terr *const cur_row = sad.ptr<Terr>(r);
+
+            for (int c = 0; c < left.cols; c++) {
+                cur_row[c] += prev_row[c];
+            }
+            prev_row = cur_row;
+        }
+
         precomp_sad[d] = sad;
     }
 
@@ -121,14 +134,10 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
             // c0) in the left image.
             int const Drow = std::min(D, c0 - Wcols/2);
             for (Tout d = 0; d <= Drow; d++) {
-                Mat const sad = precomp_sad[d];
-                Terr error = 0;
-
                 // Add the pre-computed partial row-SADs to calculate the total
                 // SAD in the window.
-                for (int dr = -Wrows/2; dr < Wrows/2; dr++) {
-                    error += sad.at<Terr>(r0 + dr, c0);
-                }
+                Mat const sad = precomp_sad[d];
+                Terr error = sad.at<Terr>(r0 + Wrows/2, c0) - sad.at<Terr>(r0 - Wrows/2, c0);
 
                 if (error < best_error) {
                     best_error     = error;

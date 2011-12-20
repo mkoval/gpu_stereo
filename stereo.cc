@@ -53,7 +53,7 @@ int main(int argc, char **argv)
         if (algo == "opencv_cpu") {
             opencv_matcher(left, right, disparity);
         } else if (algo == "custom_cpu") {
-            MatchBM(left, right, disparity);
+            MatchBM(left, right, disparity, 64, 21);
         } else {
             cerr << "err: unknown algorithm" << endl;
             return 1;
