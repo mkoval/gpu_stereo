@@ -3,13 +3,21 @@
 
 #include <iostream>
 
+using cv::DataType;
 using cv::Mat;
 using cv::Mat_;
 using cv::Scalar;
 
-template <typename Tin, typename Tout, int Krows, int Kcols>
+template <typename Tin, typename Tker, typename Tout, int Krows, int Kcols>
 static void convolve(Mat const &src, Mat &dst, Mat const &ker)
 {
+    CV_Assert(src.rows >= ker.rows && src.cols >= ker.cols);
+    CV_Assert(ker.rows == Krows    && ker.cols == Kcols);
+    CV_Assert(src.type() == CV_MAKETYPE(DataType<Tin>::depth, 1)
+           && ker.type() == CV_MAKETYPE(DataType<Tker>::depth, 1));
+
+    dst.create(src.rows, src.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
+
     for (int r0 = Krows/2; r0 < src.rows - Krows/2; r0++) {
         Tout *const dst_row = dst.ptr<Tout>(r0);
 
@@ -17,7 +25,7 @@ static void convolve(Mat const &src, Mat &dst, Mat const &ker)
             for (int dr = 0; dr < Krows; dr++) {
                 int const r = r0 + dr - Krows/2;
                 Tin  const *const src_row = src.ptr<Tin>(r);
-                Tout const *const ker_row = ker.ptr<Tout>(dr);
+                Tker const *const ker_row = ker.ptr<Tker>(dr);
 
                 for (int dc = 0; dc < Kcols; dc++) {
                     int const c = c0 + dc - Kcols/2;
@@ -31,7 +39,7 @@ static void convolve(Mat const &src, Mat &dst, Mat const &ker)
 template <typename Tin, typename Tout>
 static void LaplacianOfGaussian(Mat const &src, Mat &dst)
 {
-    static Mat const ker = (Mat_<int16_t>(9, 9) <<
+    static Mat const ker = (Mat_<int8_t>(9, 9) <<
         0, 1, 1,   2,   2,   2, 1, 1, 0,
         1, 2, 4,   5,   5,   5, 4, 2, 1,
         1, 4, 5,   3,   0,   3, 5, 4, 1,
@@ -42,9 +50,7 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
         1, 2, 4,   5,   5,   5, 4, 2, 1,
         0, 1, 1,   2,   2,   2, 1, 1, 0
     );
-
-    dst.create(src.rows, src.cols, CV_16SC1);
-    convolve<Tin, Tout, 9, 9>(src, dst, ker);
+    convolve<Tin, int8_t, Tout, 9, 9>(src, dst, ker);
 }
 
 template <typename Tin, typename Tlog, typename Tout, int Wrows, int Wcols, int D>
