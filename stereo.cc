@@ -1,8 +1,18 @@
 #include <iostream>
+#include <string>
+#include <sstream>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Woverloaded-virtual"
 #include <opencv2/opencv.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/gpu/gpu.hpp>
+#pragma clang diagnostic pop
+
+#include "util.h"
 
 using cv::Mat;
 using cv::Range;
@@ -11,6 +21,7 @@ using cv::StereoBM;
 using cv::gpu::GpuMat;
 using cv::gpu::StereoBM_GPU;
 
+#if 0
 static int const max_disparity  = StereoBM_GPU::DEFAULT_NDISP;
 static int const window_size    = StereoBM_GPU::DEFAULT_WINSZ;
 static int const texture_thresh = 0;
@@ -78,48 +89,34 @@ static void match_cpu(Mat const &left, Mat const &right, Mat &disparity)
         disparity.at<float>(row, col) = best_offset;
     }
 }
+#endif
 
 int main(int argc, char **argv)
 {
-    if (argc < 3) {
-        std::cerr << "err: incorrect number of arguments"         << std::endl
-                  << "usage: ./stereo <left image> <right image>" << std::endl;
+    if (argc <= 4) {
+        std::cerr << "err: incorrect number of arguments\n"
+                  << "usage: ./stereo <left image> <right image> <algo> <repeats>\n";
         return 1;
     }
 
     Mat const left  = cv::imread(argv[1], 0);
     Mat const right = cv::imread(argv[2], 0);
+    std::string const algo = argv[3];
+
+    int repeats;
+    std::stringstream ss(argv[4]);
+    ss >> repeats;
 
     if (left.rows != right.rows || left.cols != right.cols) {
-        std::cerr << "err: both images must be the same size" << std::endl;
+        std::cerr << "err: both images must be the same size\n";
         return 1;
     }
 
-    // OpenCV CPU Stereo
-    Mat disparity_cpu;
-    match_opencv_cpu(left, right, disparity_cpu);
+    Mat disparity;
+    LaplacianOfGaussian(left, disparity);
 
-    // OpenCV GPU Stereo
-    Mat disparity_gpu;
-    match_opencv_gpu(left, right, disparity_gpu);
-
-    // Custom Implementation
-    Mat disparity_cust;
-    match_cpu(left, right, disparity_cust);
-
-    // Render the 
-    Mat render(left.rows, 4*left.cols, CV_8UC1);
-    Mat render_left = render(Range::all(), Range(0*left.cols, 1*left.cols));
-    Mat render_cpu  = render(Range::all(), Range(1*left.cols, 2*left.cols));
-    Mat render_gpu  = render(Range::all(), Range(2*left.cols, 3*left.cols));
-    Mat render_cust = render(Range::all(), Range(3*left.cols, 4*left.cols));
-    left.copyTo(render_left);
-    cv::normalize(disparity_cpu,  render_cpu,  0, 255, cv::NORM_MINMAX, CV_8UC1);
-    cv::normalize(disparity_gpu,  render_gpu,  0, 255, cv::NORM_MINMAX, CV_8UC1);
-    cv::normalize(disparity_cust, render_cust, 0, 255, cv::NORM_MINMAX, CV_8UC1);
-
-    cv::imshow("Stereo Pair", render);
-    cv::waitKey();
-
+    Mat disparity_norm;
+    cv::normalize(disparity, disparity_norm,  0, 255, cv::NORM_MINMAX, CV_8UC1);
+    cv::imwrite("disparity.png", disparity_norm);
     return 0;
 }

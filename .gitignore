@@ -1,4 +1,8 @@
 images/
-*.o
 .DS_Store
 stereo
+*.aux
+*.log
+*.pdf
+*.png
+*.o

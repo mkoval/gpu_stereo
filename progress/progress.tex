@@ -1,0 +1,132 @@
+\documentclass{article}
+\usepackage{float}
+\usepackage{fullpage}
+\usepackage{graphicx}
+\usepackage{subfig}
+
+\title{
+	\textbf{ECE452 Final Project} \\
+	Parallelized Stereo Reconstruction
+}
+\author{
+	Michael Koval \\
+	mkoval@eden.rutgers.edu
+}
+\date{December 16, 2010}
+
+\begin{document}
+\maketitle
+
+\section{Project Description}
+Stereo vision is the process of extracting depth information from two images of
+the same scene. Humans are able to unconsciously do this, but mimicking this
+success using digital cameras is quite challenging and is frequently studied by
+computer vision researchers. At its heart, stereo vision is the problem of
+finding corresponding points in two images of the same scene. There are two
+primary types of algorithms used for this purpose: region-based \textit{graph
+cuts} matching algorithms and pixel-based \textit{block matching} algorithms.
+This project focuses on the latter, specifically the \textit{sum of absolute
+difference} (SAD) or \textit{sum of square difference} (SSD) algorithm that
+was first implemented on SRI's Small Vision Module (Konolige, 1998).
+
+This algorithm begins by computing the Laplacian of Gaussian (LoG) of the input
+images by convolving both images with the appropriate kernel. For each pixel in
+the filtered left image, Konolige's SAD-BM algorithm searches for the
+corresponding pixel in the right image that minimizes the L1 norm between the
+windows centered at the two pixels in the LoG-transformed images. The number of
+pixels between the feature in the left and right images is called that pixel's
+\textit{disparity} and is inversely proportional to distance; i.e. points with
+high disparity are closer to the camera than those with low disparity.
+Therefore, the image consisting of these disparity values---known as the
+\textit{disparity map}---encodes the depth of each pixel in the scene.
+
+Unfortunately, this algorithm is extremely computationally intensive:
+processing an image of size $w \times h$ with maximum disparity $d$ has a
+worst-case time complexity of $O(w h d)$, which is approximately $O(w^3)$ under
+real conditions. Thankfully, this algorithm is also a great candidate for
+parallelization: the same operations are repeated on each pixel in the image.
+In this project, I will implement several versions of the SAD-BM algorithm and
+compare their performance to the highly-optimized implementation included in
+OpenCV, an open-source computer vision library.
+
+\section{Objectives}
+\begin{itemize}
+\item Benchmark OpenCV's CPU implementations of SAD-BM
+\item Write a custom serial CPU implementation of SAD-BM as a benchmark
+\item Evaluate the performance increases gained from serial optimization
+\item Parallelize the custom CPU implementation of SAD-BM using OpenMP
+\item Benchmark OpenCV's GPU implementations of SAD-BM
+\item Write a custom parallel GPU implementation of SAD-BM
+\item Evaluate the performance of each algorithm under a variety of conditions
+\end{itemize}
+
+\section{Work Done}
+\begin{itemize}
+\item Benchmark OpenCV's CPU and GPU implementations of SAD-BM
+\item Write a custom serial CPU implementation of SAD-BM as a benchmark
+\item Benchmark OpenCV's GPU implementations of SAD-BM
+\end{itemize}
+
+\begin{figure}[H]
+	\centering
+	\subfloat[Left Input]{ \includegraphics[width=0.33\textwidth]{figures/input_left}}
+	\subfloat[Right Input]{\includegraphics[width=0.33\textwidth]{figures/input_right}}
+	\caption{
+		Stereo pair used to evaluate the SSD-BM algorithm. Note that the two
+		images are already rectified.
+	}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\subfloat[OpenCV CPU]{\includegraphics[width=0.33\textwidth]{figures/opencv_cpu}}
+	\subfloat[OpenCV GPU]{\includegraphics[width=0.33\textwidth]{figures/opencv_gpu}}
+	\subfloat[Custom CPU]{\includegraphics[width=0.33\textwidth]{figures/custom_cpu}}
+	\caption{
+		Comparison between OpenCV and the custom implementations of SSD-BM. The differences
+		between the OpenCV CPU implementation and the other two implementations are due to
+		additional filtering and post-processing and are not related to the block-matching
+		algorithm.
+	}
+\end{figure}
+
+\begin{table}
+	\centering
+	\begin{tabular}{|c|c|}
+	\hline
+	Implementation & Time (s) \\
+	\hline
+	OpenCV CPU & 0.01418 \\
+	OpenCV GPU & 0.06902 \\
+	Custom CPU & 11.4897 \\
+	\hline
+	\end{tabular}
+	\caption{
+		Preliminary benchmarks of OpenCV and the custom CPU implementation. OpenCV
+		dramatically beats the custom implementation because of it has been
+		hand-optimized and makes extensive use of SSE2 for SIMD on small integer
+		datatypes. This performance gap will close once the necessary optimizations
+		have been made to the custom implementation.
+	}
+\end{table}
+
+\section{Remaining Work}
+\begin{itemize}
+\item Evaluate the performance increases gained from serial optimization
+\item Parallelize the custom CPU implementation of SAD-BM using OpenMP
+\item Write a custom parallel GPU implementation of SAD-BM
+\item Evaluate the performance of each algorithm under a variety of conditions
+\end{itemize}
+
+\section{Expected Results}
+As the preliminary results show, OpenCV's CPU implementation is considerably
+faster than the OpenCV GPU implementation and the custom implementation. This
+is not surprising for two reasons: (1) the GPU implementation was evaluated on
+a low-end notebook graphics card and (2) the custom CPU implementation has not
+yet been optimized. After evaluating the GPU implementation on better hardware,
+I expect the OpenCV GPU implementation to dramatically outperform the
+corresponding CPU implementation. Similarly, I expect the custom SAD-BM
+algorithm to be closer to the performance of the OpenCV CPU implementation
+after the necessary optimizations have been made.
+
+\end{document}
