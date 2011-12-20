@@ -19,27 +19,26 @@ static T abs(T x)
     return (x >= 0) ? x : -x;
 }
 
-template <typename Tin, typename Tker, typename Tout, int Krows, int Kcols>
+template <typename Tin, typename Tker, typename Tout>
 static void convolve(Mat const &src, Mat &dst, Mat const &ker)
 {
     CV_Assert(src.rows >= ker.rows && src.cols >= ker.cols);
-    CV_Assert(ker.rows == Krows    && ker.cols == Kcols);
     CV_Assert(src.type() == CV_MAKETYPE(DataType<Tin>::depth, 1)
            && ker.type() == CV_MAKETYPE(DataType<Tker>::depth, 1));
 
     dst.create(src.rows, src.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
 
-    for (int r0 = Krows/2; r0 < src.rows - Krows/2; r0++) {
+    for (int r0 = ker.rows/2; r0 < src.rows - ker.rows/2; r0++) {
         Tout *const dst_row = dst.ptr<Tout>(r0);
 
-        for (int c0 = Kcols/2; c0 < src.cols - Kcols/2; c0++) {
-            for (int dr = 0; dr < Krows; dr++) {
-                int const r = r0 + dr - Krows/2;
+        for (int c0 = ker.cols/2; c0 < src.cols - ker.cols/2; c0++) {
+            for (int dr = 0; dr < ker.rows; dr++) {
+                int const r = r0 + dr - ker.rows/2;
                 Tin  const *const src_row = src.ptr<Tin>(r);
                 Tker const *const ker_row = ker.ptr<Tker>(dr);
 
-                for (int dc = 0; dc < Kcols; dc++) {
-                    int const c = c0 + dc - Kcols/2;
+                for (int dc = 0; dc < ker.cols; dc++) {
+                    int const c = c0 + dc - ker.cols/2;
                     dst_row[c] += ker_row[dc] * src_row[c];
                 }
             }
@@ -61,7 +60,7 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
         1, 2, 4,   5,   5,   5, 4, 2, 1,
         0, 1, 1,   2,   2,   2, 1, 1, 0
     );
-    convolve<Tin, int8_t, Tout, 9, 9>(src, dst, ker);
+    convolve<Tin, int8_t, Tout>(src, dst, ker);
 }
 
 template <typename Tin, typename Tlog, typename Terr, typename Tout>
