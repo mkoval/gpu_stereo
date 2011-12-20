@@ -64,7 +64,8 @@ static void LaplacianOfGaussian(Mat const &src, Mat &dst)
 }
 
 template <typename Tin, typename Tlog, typename Terr, typename Tout>
-static void MatchBM(Mat const &left, Mat const &right, Mat &disparity, int Wrows, int Wcols, int D)
+static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
+                    int Wrows, int Wcols, int D)
 {
     CV_Assert(Wrows > 0 && Wcols > 0 && D >= 0);
     CV_Assert(left.rows == right.rows && left.rows >= Wrows
@@ -83,7 +84,8 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity, int Wrows
     // O(w*h*D), which is a substantial speedup when D = O(w).
     vector<Mat> precomp_sad(D + 1);
     for (int d = 0; d <= D; d++) {
-        Mat sad(left.rows, left.cols, CV_MAKETYPE(DataType<Terr>::depth, 1), Scalar::all(0));
+        Mat sad(left.rows, left.cols, CV_MAKETYPE(DataType<Terr>::depth, 1),
+                Scalar::all(0));
 
         for (int r0 = 0; r0 < left.rows; r0++) {
             Tin const *const left_row  = left.ptr<Tin>(r0);
@@ -138,7 +140,10 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity, int Wrows
     }
 }
 
-void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
+void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
+             int ndisparities, int window_size)
 {
-    MatchBM<uint8_t, int16_t, int32_t, int32_t>(left, right, disparity, 25, 25, 64);
+    MatchBM<uint8_t, int16_t, int32_t, int32_t>(left, right, disparity,
+                                                window_size, window_size,
+                                                ndisparities);
 }

@@ -20,12 +20,15 @@ using cv::Size;
 using cv::StereoBM;
 using cv::gpu::GpuMat;
 using cv::gpu::StereoBM_GPU;
+using std::cerr;
+using std::cout;
+using std::endl;
 
 int main(int argc, char **argv)
 {
     if (argc <= 4) {
         std::cerr << "err: incorrect number of arguments\n"
-                  << "usage: ./stereo <left image> <right image> <algo> <repeats>\n";
+                  << "usage: ./stereo <left image> <right image> <repeats>\n";
         return 1;
     }
 
@@ -42,8 +45,20 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // Time the algorithm over a large number of iterations.
+    StereoBM opencv_matcher(StereoBM::BASIC_PRESET, 64, 21);
     Mat disparity;
-    MatchBM(left, right, disparity);
+
+    for (int i = 0; i < repeats; i++) {
+        if (algo == "opencv_cpu") {
+            opencv_matcher(left, right, disparity);
+        } else if (algo == "custom_cpu") {
+            MatchBM(left, right, disparity);
+        } else {
+            cerr << "err: unknown algorithm" << endl;
+            return 1;
+        }
+    }
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
