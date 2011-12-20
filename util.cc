@@ -73,25 +73,23 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity)
         Tout *const disparity_row = disparity.ptr<Tout>(r0);
 
         for (int c0 = Wcols/2 + D; c0 < left.cols - Wcols/2; c0++) {
-            int32_t best_error     = INT32_MAX;
-            int     best_disparity = 0;
+            int best_error     = INT32_MAX;
+            int best_disparity = 0;
 
             for (int d = 0; d <= D; d++) {
                 int32_t error = 0;
 
-                for (int r = r0 - Wrows/2; r < r0 + Wrows/2; r++) {
+                for (int dr = -Wrows/2; dr < Wrows/2; dr++) {
+                    int const r = r0 + dr;
                     Tlog const *const left_row  = left_log.ptr<Tlog>(r);
                     Tlog const *const right_row = right_log.ptr<Tlog>(r);
 
-                    for (int c = std::max(c0 - d - Wcols/2, 0); c < c0 - d + Wcols/2; c++) {
-                        error += abs((int32_t)left_row[c] - (int32_t)right_row[c]);
+                    for (int dc = -Wcols/2; dc < Wcols/2; dc++) {
+                        int const c_left  = c0 + dc;
+                        int const c_right = c0 + dc - d;
+                        error += abs((int)left_row[c_left] - (int)right_row[c_right]);
                     }
                 }
-
-                cv::Range rows(r0 - Wrows/2, r0 + Wrows/2);
-                cv::Range cols_left(c0 - Wcols/2, c0 + Wcols/2);
-                cv::Range cols_right(c0 - d - Wcols/2, c0 - d + Wcols/2);
-                error = cv::norm(left_log(rows, cols_left), right_log(rows, cols_right), cv::NORM_L1);
 
                 if (error < best_error) {
                     best_error     = error;
