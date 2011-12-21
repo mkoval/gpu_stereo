@@ -8,6 +8,8 @@ NVCCFLAGS := -O3
 LDFLAGS   := $(CXXFLAGS) -L$(CUDA_PATH)/lib $(shell pkg-config --libs opencv) -lopencv_gpu -lcuda -lcudart
 OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cu.o
 
+MAKEFLAGS += -r
+
 ifeq ($(shell uname), Darwin)
 CXX = clang++
 LD  = clang++
@@ -32,6 +34,8 @@ $(TARGET): $(OBJECTS)
 	@echo "CXX $@"
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+# Override make's implicit %: %.o rule.
+%.cu:
 %.cu.o: %.cu Makefile
 	@echo "NVCC $@"
 	@$(NVCC) $(NVCCFLAGS) -c -o $@ $<
