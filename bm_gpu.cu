@@ -25,11 +25,10 @@ template <typename Tin, typename Tker, typename Tout,
           size_t Krows, size_t Kcols>
 __global__
 void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
-              size_t rows, size_t cols,
-              size_t src_pitch, size_t dst_pitch)
+              int rows, int cols, size_t src_pitch, size_t dst_pitch)
 {
-    size_t const r0 = threadIdx.x + blockIdx.x * blockDim.x;
-    size_t const c0 = threadIdx.y + blockIdx.y * blockDim.y;
+    int const r0 = threadIdx.x + blockIdx.x * blockDim.x;
+    int const c0 = threadIdx.y + blockIdx.y * blockDim.y;
 
     // This divergent execution path won't harm efficiency too much because one
     // of the paths terminates after a few clock cycles.
@@ -37,15 +36,19 @@ void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
      && Kcols/2 <= c0 && c0 < cols - Kcols/2) {
         Tout value = 0;
 
-        for (size_t dr = 0; dr < Krows; dr++)
-        for (size_t dc = 0; dc < Kcols; dc++) {
-            size_t const r = r0 + dr - Krows/2;
-            size_t const c = c0 + dc - Kcols/2;
+        for (int dr = 0; dr < Krows; dr++)
+        for (int dc = 0; dc < Kcols; dc++) {
+            int const r = r0 + dr - Krows/2;
+            int const c = c0 + dc - Kcols/2;
             value += ker[dr * Kcols + dc] * (Tout)src[r * src_pitch + c];
         }
 
         dst[r0 * dst_pitch + c0] = value;
-    } else {
+    }
+    // Some blocks may extend off the edge of the image if either of its
+    // dimensions are not evenly divisible by WSIZE. This additional check
+    // prevents writing to invalid memory.
+    else if (0 <= r0 && r0 < rows && 0 <= c0 && c0 < cols) {
         dst[r0 * dst_pitch + c0] = 0;
     }
 }
@@ -54,7 +57,7 @@ template <typename Tin, typename Tout>
 __host__
 void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
                          size_t src_pitch, size_t dst_pitch,
-                         size_t rows, size_t cols)
+                         int rows, int cols)
 {
     // Copy the input image to the device.
     Tin *srcd;
@@ -86,6 +89,6 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
 
 template void LaplacianOfGaussian(uint8_t const *const src, int16_t *const dst,
                                   size_t src_pitch, size_t dst_pitch,
-                                  size_t rows, size_t cols);
+                                  int rows, int cols);
 
 }
