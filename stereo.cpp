@@ -67,7 +67,12 @@ int main(int argc, char **argv)
         }
     }
 
-    gpu::LaplacianOfGaussian<uint8_t, int16_t>((uint8_t *)left.data, (int16_t *)disparity.data, left.rows, left.cols);
+    disparity.create(left.rows, left.cols, CV_16SC1);
+    gpu::LaplacianOfGaussian<uint8_t, int16_t>(
+        left.ptr<uint8_t>(0), disparity.ptr<int16_t>(0),
+        left.step[1], disparity.step[1],
+        left.rows, left.cols
+    );
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);

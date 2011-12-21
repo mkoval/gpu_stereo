@@ -53,21 +53,20 @@ void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
 template <typename Tin, typename Tout>
 __host__
 void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
+                         size_t src_pitch, size_t dst_pitch,
                          size_t rows, size_t cols)
 {
     // Copy the input image to the device.
     Tin *srcd;
     size_t srcd_pitch;
-    size_t const src_pitch = cols*sizeof(Tin);
-    cudaMallocPitch(&srcd, &srcd_pitch, src_pitch, rows);
-    cudaMemcpy2D(srcd, srcd_pitch, src, src_pitch, src_pitch, rows,
-                 cudaMemcpyHostToDevice);
+    cudaMallocPitch(&srcd, &srcd_pitch, cols * sizeof(Tin), rows);
+    cudaMemcpy2D(srcd, srcd_pitch, src, src_pitch,
+                 cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
 
     // Allocate a buffer for the output on the device.
     Tout *dstd;
     size_t dstd_pitch;
-    size_t const dst_pitch = cols*sizeof(Tout);
-    cudaMallocPitch(&dstd, &dstd_pitch, cols*sizeof(Tout), rows);
+    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
 
     // Split the image into as many sqrt(WSIZE)*sqrt(WSIZE) blocks as is needed
     // to cover the entire image. This guarantees that there are approximately
@@ -76,16 +75,17 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
     int const tpb = (int)floor(sqrt(WSIZE));
     convolve<Tin, int8_t, Tout, KERNEL_LOG_ROWS, KERNEL_LOG_COLS>
             <<<dim3((cols + 1)/tpb, (rows + 1)/tpb), dim3(tpb, tpb)>>>
-            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, src_pitch, dst_pitch);
+            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, srcd_pitch, dstd_pitch);
 
     // Copy the result back to the host.
-    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch, src_pitch, rows,
-                 cudaMemcpyDeviceToHost);
+    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch,
+                 cols * sizeof(Tout), rows, cudaMemcpyDeviceToHost);
     cudaFree(srcd);
     cudaFree(dstd);
 }
 
 template void LaplacianOfGaussian(uint8_t const *const src, int16_t *const dst,
+                                  size_t src_pitch, size_t dst_pitch,
                                   size_t rows, size_t cols);
 
 }
