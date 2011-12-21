@@ -67,6 +67,8 @@ int main(int argc, char **argv)
         }
     }
 
+    gpu::LaplacianOfGaussian<uint8_t, int16_t>((uint8_t *)left.data, (int16_t *)disparity.data, left.rows, left.cols);
+
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
     cv::imwrite("disparity.png", disparity_norm);

@@ -79,7 +79,7 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
             (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, src_pitch, dst_pitch);
 
     // Copy the result back to the host.
-    cudaMemcpy2D(dst, dst_pitch, srcd, srcd_pitch, src_pitch, rows,
+    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch, src_pitch, rows,
                  cudaMemcpyDeviceToHost);
     cudaFree(srcd);
     cudaFree(dstd);
