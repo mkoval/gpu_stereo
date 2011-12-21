@@ -2,9 +2,9 @@ CXX  = clang++
 NVCC = nvcc
 LD   = clang++
 TARGET     = stereo
-CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -flto
+CXXFLAGS  := $(shell pkg-config --cflags opencv) -I/usr/local/cuda/include -Wall -O3
 NVCCFLAGS := -O3 --machine=64
-LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu -L/usr/local/lib
+LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu -L/usr/local/cuda/lib -lcuda -lcudart
 OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cu.o
 
 MAKEFLAGS += -R
