@@ -9,5 +9,6 @@ template <typename Tin, typename Tout>
 void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
                          size_t rows, size_t cols);
 
-};
+}
+
 #endif

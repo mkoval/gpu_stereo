@@ -88,4 +88,4 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
 template void LaplacianOfGaussian(uint8_t const *const src, int16_t *const dst,
                                   size_t rows, size_t cols);
 
-};
+}

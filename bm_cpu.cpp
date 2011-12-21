@@ -164,4 +164,4 @@ void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
                                                 ndisparities);
 }
 
-};
+}

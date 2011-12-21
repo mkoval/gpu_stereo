@@ -21,6 +21,6 @@ void LaplacianOfGaussian(cv::Mat const &src, cv::Mat &dst);
 void MatchBM(cv::Mat const &left, cv::Mat const &right, cv::Mat &disparity,
              int ndisparities, int window_size);
 
-};
+}
 
 #endif
