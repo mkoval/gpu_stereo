@@ -2,10 +2,12 @@ CXX  = clang++
 NVCC = nvcc
 LD   = clang++
 TARGET     = stereo
-CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -march=core2 -flto
-NVCCFLAGS :=
-LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu
-OBJECTS    = stereo.cpp.o bm_cpu.cpp.o
+CXXFLAGS  := $(shell pkg-config --cflags opencv) -Wall -O3 -flto
+NVCCFLAGS := -O3 --machine=64
+LDFLAGS   := $(shell pkg-config --libs opencv) -lopencv_gpu -L/usr/local/lib
+OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cu.o
+
+MAKEFLAGS += -R
 
 .PHONY: all clean
 .SECONDARY:

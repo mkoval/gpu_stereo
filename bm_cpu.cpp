@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include "bm_cpu.hpp"
 
+namespace cpu {
+
 using cv::DataType;
 using cv::Mat;
 using cv::Mat_;
@@ -161,3 +163,5 @@ void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
                                                 window_size, window_size,
                                                 ndisparities);
 }
+
+};

@@ -2,17 +2,24 @@
 #include <string>
 #include <sstream>
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Woverloaded-virtual"
+#endif
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/gpu/gpu.hpp>
+
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 #include "bm_cpu.hpp"
+#include "bm_gpu.hpp"
 
 using cv::Mat;
 using cv::Range;
@@ -53,7 +60,7 @@ int main(int argc, char **argv)
         if (algo == "opencv_cpu") {
             opencv_matcher(left, right, disparity);
         } else if (algo == "custom_cpu") {
-            MatchBM(left, right, disparity, 64, 21);
+            cpu::MatchBM(left, right, disparity, 64, 21);
         } else {
             cerr << "err: unknown algorithm" << endl;
             return 1;
