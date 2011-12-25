@@ -19,7 +19,7 @@
 #endif
 
 #include "bm_cpu.hpp"
-#include "bm_cvgpu.hpp"
+#include "bm_gpu.hpp"
 
 using cv::Mat;
 using cv::Range;
@@ -52,22 +52,21 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // Time the algorithm over a large number of iterations.
-    StereoBM opencv_matcher(StereoBM::BASIC_PRESET, 64, 21);
-    Mat disparity;
+    cv::Mat const kernel = (cv::Mat_<int8_t>(9, 9) <<
+        0, 1, 1,   2,   2,   2, 1, 1, 0,
+        1, 2, 4,   5,   5,   5, 4, 2, 1,
+        1, 4, 5,   3,   0,   3, 5, 4, 1,
+        2, 5, 3, -12, -24, -12, 3, 5, 2,
+        2, 5, 0, -24, -40, -24, 0, 5, 2,
+        2, 5, 3, -12, -24, -12, 3, 5, 2,
+        1, 4, 5,   3,   0,   3, 5, 4, 1,
+        1, 2, 4,   5,   5,   5, 4, 2, 1,
+        0, 1, 1,   2,   2,   2, 1, 1, 0
+    );
 
-    for (int i = 0; i < repeats; i++) {
-        if (algo == "opencv_cpu") {
-            opencv_matcher(left, right, disparity);
-        } else if (algo == "custom_cpu") {
-            cpu::MatchBM(left, right, disparity, 64, 21);
-        } else {
-            cerr << "err: unknown algorithm" << endl;
-            return 1;
-        }
-    }
-
-    gpu::StereoBM(left, right, disparity);
+    cv::gpu::GpuMat gpu_left(left), gpu_kernel(kernel), gpu_disp;
+    gpu::convolve(gpu_left, gpu_kernel, gpu_disp);
+    cv::Mat disparity = gpu_disp;
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);

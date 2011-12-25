@@ -6,7 +6,7 @@ TARGET     = stereo
 CXXFLAGS  := $(shell pkg-config --cflags opencv) -I$(CUDA_PATH)/include -pedantic -Wall -O3 -flto
 NVCCFLAGS := -O3
 LDFLAGS   := $(CXXFLAGS) -L$(CUDA_PATH)/lib $(shell pkg-config --libs opencv) -lopencv_gpu -lcuda -lcudart
-OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cu.o bm_cvgpu.cpp.o
+OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cpp.o bm_gpu.cu.o
 
 MAKEFLAGS += -r
 

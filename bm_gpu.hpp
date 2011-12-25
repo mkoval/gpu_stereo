@@ -3,17 +3,22 @@
 
 #include <stdint.h>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#endif
+
+#include <opencv2/gpu/gpu.hpp>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
 namespace gpu {
 
-template <typename Tin, typename Tout>
-void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
-                         size_t src_pitch, size_t dst_pitch,
-                         int rows, int cols);
-
-template <typename Tin, typename Tlog, typename Terr, typename Tout>
-void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
-              size_t left_pitch, size_t right_pitch, size_t dst_pitch,
-              int rows, int cols);
+void convolve(cv::gpu::GpuMat const &src, 
+              cv::gpu::GpuMat const &ker,
+              cv::gpu::GpuMat       &dst);
 
 }
 
