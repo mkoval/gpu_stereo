@@ -27,6 +27,12 @@ static T &index(T *img, int r, int c, int pitch) {
     return *((T *)(((uint8_t *)img) + r * pitch + c));
 }
 
+template <typename T>
+__host__ __device__
+static T abs(T x) {
+    return (x >= 0) ? x : -x;
+}
+
 template <typename Tin, typename Tker, typename Tout,
           size_t Krows, size_t Kcols>
 __global__
@@ -125,14 +131,12 @@ void HorizontalSAD(Tsrc const *const left, Tsrc const *const right, Tdst *const 
     Tdst diff = 0;
 
     for (int dc = -window_width / 2; dc <= window_width / 2; dc++) {
-        int const c_left  = c0 + dc;
-        int const c_right = c0 + dc - disparity;
-        Tdst const left_px  = left[c_left + r0 * left_pitch];
-        Tdst const right_px = right[c_right + r0 * right_pitch];
-        diff += abs(left_px - right_px);
+        Tdst const left_px  = (Tdst)index<Tsrc const>(left,  r0, c0 + dc,             left_pitch);
+        Tdst const right_px = (Tdst)index<Tsrc const>(right, r0, c0 + dc - disparity, right_pitch);
+        diff += abs<Tdst>(left_px - right_px);
     }
 
-    dst[c0 + r0 * dst_pitch] = diff;
+    index(dst, r0, c0, dst_pitch) = diff;
 }
 
 template <typename Tin, typename Tlog, typename Terr, typename Tout>
