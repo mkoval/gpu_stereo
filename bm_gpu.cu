@@ -1,0 +1,182 @@
+#include <cmath>
+#include <stdint.h>
+#include <cuda_runtime.h>
+#include "bm_gpu.hpp"
+
+namespace gpu {
+
+__device__ __constant__ int8_t const KERNEL_LOG[9][9] = {
+    { 0, 1, 1,   2,   2,   2, 1, 1, 0 },
+    { 1, 2, 4,   5,   5,   5, 4, 2, 1 },
+    { 1, 4, 5,   3,   0,   3, 5, 4, 1 },
+    { 2, 5, 3, -12, -24, -12, 3, 5, 2 },
+    { 2, 5, 0, -24, -40, -24, 0, 5, 2 },
+    { 2, 5, 3, -12, -24, -12, 3, 5, 2 },
+    { 1, 4, 5,   3,   0,   3, 5, 4, 1 },
+    { 1, 2, 4,   5,   5,   5, 4, 2, 1 },
+    { 0, 1, 1,   2,   2,   2, 1, 1, 0 }
+};
+
+#define KERNEL_LOG_ROWS 9
+#define KERNEL_LOG_COLS 9
+#define WSIZE 32
+
+template <typename T>
+__host__ __device__
+static T &index(T *img, int r, int c, int pitch) {
+    return *((T *)(((uint8_t *)img) + r * pitch + c));
+}
+
+template <typename Tin, typename Tker, typename Tout,
+          size_t Krows, size_t Kcols>
+__global__
+void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
+              int rows, int cols,
+              size_t src_pitch, size_t dst_pitch)
+{
+    size_t const r0 = threadIdx.x + blockIdx.x * blockDim.x;
+    size_t const c0 = threadIdx.y + blockIdx.y * blockDim.y;
+
+    // This divergent execution path won't harm efficiency too much because one
+    // of the paths terminates after a few clock cycles.
+    if (Krows/2 <= r0 && r0 < rows - Krows/2
+     && Kcols/2 <= c0 && c0 < cols - Kcols/2) {
+        Tout value = 0;
+
+        for (size_t dr = 0; dr < Krows; dr++)
+        for (size_t dc = 0; dc < Kcols; dc++) {
+            size_t const r = r0 + dr - Krows/2;
+            size_t const c = c0 + dc - Kcols/2;
+            value += ker[dr * Kcols + dc] * (Tout)index(src, r, c, src_pitch);
+        }
+
+        index(dst, r0, c0, dst_pitch) = value;
+    } else {
+        index(dst, r0, c0, dst_pitch) = 0;
+    }
+}
+
+template <typename Tin, typename Tout>
+__host__
+void LaplacianOfGaussianD(Tin const *const srcd, Tout *const dstd,
+                          size_t srcd_pitch, size_t dstd_pitch,
+                          int rows, int cols)
+{
+    // Split the image into as many sqrt(WSIZE)*sqrt(WSIZE) blocks as is needed
+    // to cover the entire image. This guarantees that there are approximately
+    // WSIZE threads per block. Then, solve for the convolution using one thread
+    // per pixel.
+    int const tpb = (int)floor(sqrt(WSIZE));
+    convolve<Tin, int8_t, Tout, KERNEL_LOG_ROWS, KERNEL_LOG_COLS>
+            <<<dim3((cols + 1)/tpb, (rows + 1)/tpb), dim3(tpb, tpb)>>>
+            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, srcd_pitch, dstd_pitch);
+}
+
+template <typename Tin, typename Tout>
+__host__
+void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
+                         size_t src_pitch, size_t dst_pitch,
+                         int rows, int cols)
+{
+    // Copy the input image to the device.
+    Tin *srcd;
+    size_t srcd_pitch;
+    cudaMallocPitch(&srcd, &srcd_pitch, cols * sizeof(Tin), rows);
+    cudaMemcpy2D(srcd, srcd_pitch, src, src_pitch,
+                 cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
+
+    // Allocate a buffer for the output on the device.
+    Tout *dstd;
+    size_t dstd_pitch;
+    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
+
+    LaplacianOfGaussianD<Tin, Tout>(
+        srcd, dstd,
+        srcd_pitch, dstd_pitch,
+        rows, cols
+    );
+
+    // Copy the result back to the host.
+    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch,
+                 cols * sizeof(Tout), rows, cudaMemcpyDeviceToHost);
+    cudaFree(srcd);
+    cudaFree(dstd);
+}
+
+template void LaplacianOfGaussian<uint8_t, int16_t>(
+    uint8_t const *const src, int16_t *const dst,
+    size_t src_pitch, size_t dst_pitch,
+    int rows, int cols);
+
+/***************************************************************************/
+
+#define MAX_DISPARITY 64
+#define SAD_ROWS 21
+#define SAD_COLS 21
+
+template <typename Tsrc, typename Tdst>
+__global__
+void HorizontalSAD(Tsrc const *const left, Tsrc const *const right, Tdst *const dst,
+                   size_t left_pitch, size_t right_pitch, size_t dst_pitch,
+                   int rows, int cols, int window_width, int disparity)
+{
+    int const r0 = threadIdx.x + blockIdx.x * blockDim.x;
+    int const c0 = threadIdx.y + blockIdx.y * blockDim.y;
+    Tdst diff = 0;
+
+    for (int dc = -window_width / 2; dc <= window_width / 2; dc++) {
+        int const c_left  = c0 + dc;
+        int const c_right = c0 + dc - disparity;
+        Tdst const left_px  = left[c_left + r0 * left_pitch];
+        Tdst const right_px = right[c_right + r0 * right_pitch];
+        diff += abs(left_px - right_px);
+    }
+
+    dst[c0 + r0 * dst_pitch] = diff;
+}
+
+template <typename Tin, typename Tlog, typename Terr, typename Tout>
+__host__
+void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
+              size_t left_pitch, size_t right_pitch, size_t dst_pitch,
+              int rows, int cols)
+{
+    int const tpb = (int)floor(sqrt(WSIZE));
+    dim3 const Dg((cols + 1)/tpb, (rows + 1)/tpb);
+    dim3 const Db(tpb, tpb);
+
+    Tin *leftd, *rightd;
+    size_t leftd_pitch, rightd_pitch;
+    cudaMallocPitch(&leftd,  &leftd_pitch,  cols * sizeof(Tin), rows);
+    cudaMallocPitch(&rightd, &rightd_pitch, cols * sizeof(Tin), rows);
+    cudaMemcpy2D(leftd,  leftd_pitch,  left,  left_pitch,  cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
+    cudaMemcpy2D(rightd, rightd_pitch, right, right_pitch, cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
+
+    // Pre-process both of the input images using the LoG.
+    Tlog *leftd_log, *rightd_log;
+    size_t leftd_log_pitch, rightd_log_pitch;
+    cudaMallocPitch(&leftd_log,  &leftd_log_pitch,  cols * sizeof(Tlog), rows);
+    cudaMallocPitch(&rightd_log, &rightd_log_pitch, cols * sizeof(Tlog), rows);
+    LaplacianOfGaussianD<Tin, Tlog>(leftd,  leftd_log,  leftd_pitch,  leftd_log_pitch,  rows, cols);
+    LaplacianOfGaussianD<Tin, Tlog>(rightd, rightd_log, rightd_pitch, rightd_log_pitch, rows, cols);
+    cudaFree(leftd);
+    cudaFree(rightd);
+
+    // Calculate the horizontal integral image for every possible disparity.
+    Terr *dstd;
+    size_t dstd_pitch;
+    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Terr), rows);
+    HorizontalSAD<<<Dg, Db>>>(left, right, dstd, left_pitch, right_pitch, dstd_pitch, rows, cols, SAD_ROWS, 0);
+    cudaFree(leftd_log);
+    cudaFree(rightd_log);
+
+    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch, cols * sizeof(Terr), rows, cudaMemcpyDeviceToHost);
+    cudaFree(dstd);
+}
+
+template void StereoBM<uint8_t, int16_t, int32_t, int16_t>(
+    uint8_t const *const left, uint8_t const *const right, int16_t *const dst,
+    size_t left_pitch, size_t right_pitch, size_t dst_pitch,
+    int rows, int cols);
+
+}
