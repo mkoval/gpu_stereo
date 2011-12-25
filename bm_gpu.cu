@@ -83,15 +83,24 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
                          size_t src_pitch, size_t dst_pitch,
                          int rows, int cols)
 {
-    Tin  *srcd;
-    Tout *dstd;
-    size_t srcd_pitch, dstd_pitch;
-    cudaMallocPitch(&srcd, &srcd_pitch, cols * sizeof(Tin),  rows);
-    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
-
+    // Copy the input image to the device.
+    Tin *srcd;
+    size_t srcd_pitch;
+    cudaMallocPitch(&srcd, &srcd_pitch, cols * sizeof(Tin), rows);
     cudaMemcpy2D(srcd, srcd_pitch, src, src_pitch,
                  cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
-    LaplacianOfGaussianD<Tin, Tout>(srcd, dstd, srcd_pitch, dstd_pitch, rows, cols);
+
+    // Allocate a buffer for the output on the device.
+    Tout *dstd;
+    size_t dstd_pitch;
+    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
+
+    LaplacianOfGaussianD<Tin, Tout>(
+        srcd, dstd,
+        srcd_pitch, dstd_pitch,
+        rows, cols
+    );
+
     cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch,
                  cols * sizeof(Tout), rows, cudaMemcpyDeviceToHost);
 

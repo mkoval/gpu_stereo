@@ -19,7 +19,7 @@
 #endif
 
 #include "bm_cpu.hpp"
-#include "bm_gpu.hpp"
+#include "bm_cvgpu.hpp"
 
 using cv::Mat;
 using cv::Range;
@@ -54,20 +54,7 @@ int main(int argc, char **argv)
 
     // Time the algorithm over a large number of iterations.
     Mat disparity;
-    disparity.create(left.rows, left.cols, CV_16SC1);
-
-#if 0
-    gpu::StereoBM<uint8_t, int16_t, int32_t, int16_t>(
-        left.ptr<uint8_t>(0), right.ptr<uint8_t>(0), disparity.ptr<int16_t>(0),
-        left.step[0], right.step[0], disparity.step[0],
-        left.rows, left.cols, 64
-    );
-#endif
-    gpu::LaplacianOfGaussian(
-        left.data, (int16_t *)disparity.data,
-        left.cols * sizeof(uint8_t), left.cols * sizeof(int16_t),
-        left.rows, left.cols
-    );
+    gpu::LaplacianOfGaussian(left, disparity);
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
