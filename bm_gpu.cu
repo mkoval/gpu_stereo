@@ -1,10 +1,10 @@
 #include <cmath>
-#include <vector>
+#include <limits>
 #include <stdint.h>
 #include <cuda_runtime.h>
 #include "bm_gpu.hpp"
 
-using std::vector;
+using std::numeric_limits;
 
 namespace gpu {
 
@@ -119,6 +119,7 @@ template void LaplacianOfGaussian<uint8_t, int16_t>(
 
 /***************************************************************************/
 
+#define DISPARITY_NONE 0
 #define MAX_DISPARITY 64
 #define SAD_ROWS 21
 #define SAD_COLS 21
@@ -131,15 +132,19 @@ void HorizontalSAD(Tsrc const *const left, Tsrc const *const right, Tdst *const 
 {
     int const r0 = threadIdx.x + blockIdx.x * blockDim.x;
     int const c0 = threadIdx.y + blockIdx.y * blockDim.y;
-    Tdst diff = 0;
+    Tdst &error = index(dst, r0, c0, dst_pitch);
 
-    for (int dc = -window_width / 2; dc <= window_width / 2; dc++) {
-        Tdst const left_px  = (Tdst)index<Tsrc const>(left,  r0, c0 + dc,             left_pitch);
-        Tdst const right_px = (Tdst)index<Tsrc const>(right, r0, c0 + dc - disparity, right_pitch);
-        diff += abs<Tdst>(left_px - right_px);
+    if (window_width/2 + disparity <= c0 && c0 < cols - window_width/2) {
+        Tdst diff = 0;
+        for (int dc = -window_width / 2; dc <= window_width / 2; dc++) {
+            Tdst const left_px  = (Tdst)index<Tsrc const>(left,  r0, c0 + dc,             left_pitch);
+            Tdst const right_px = (Tdst)index<Tsrc const>(right, r0, c0 + dc - disparity, right_pitch);
+            diff += abs<Tdst>(left_px - right_px);
+        }
+        error = diff;
+    } else {
+        error = DISPARITY_NONE;
     }
-
-    index(dst, r0, c0, dst_pitch) = diff;
 }
 
 template <typename T>
@@ -155,9 +160,40 @@ void VerticalIntegral(T *img, size_t img_pitch, int rows, int cols)
     }
 }
 
-template <typename Tin, typename Tlog, typename Terr, typename Tout>
+template <typename Terr, typename Tdisp>
+__global__
+void BestDisparity(
+    Terr *sadd, Tdisp *dst, size_t sadd_pitch, size_t dst_pitch,
+    int rows, int cols, int sad_rows, int max_disparity, Terr max_error)
+{
+    int const r0 = threadIdx.x + blockIdx.x * blockDim.x;
+    int const c0 = threadIdx.y + blockIdx.y * blockDim.y;
+
+
+    Tdisp best_disp = 0;
+    Terr  best_sad  = max_error;
+
+    if (sad_rows/2 <= r0 && r0 < rows - sad_rows/2) {
+        for (int d = 0; d <= max_disparity; d++) {
+            Terr *sadd_lvl  = &index(sadd, d * rows, 0, sadd_pitch);
+            Terr const sad1 = index(sadd_lvl, r0 - sad_rows/2, c0, sadd_pitch);
+            Terr const sad2 = index(sadd_lvl, r0 + sad_rows/2, c0, sadd_pitch);
+            Terr const sad  = sad2 - sad1;
+
+            if (sad < best_sad) {
+                best_disp = d;
+                best_sad  = sad;
+            }
+        }
+        index(dst, r0, c0, dst_pitch) = best_disp;
+    } else {
+        index(dst, r0, c0, dst_pitch) = DISPARITY_NONE;
+    }
+}
+
+template <typename Tin, typename Tlog, typename Terr, typename Tdisp>
 __host__
-void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
+void StereoBM(Tin const *const left, Tin const *const right, Tdisp *const dst,
               size_t left_pitch, size_t right_pitch, size_t dst_pitch,
               int rows, int cols)
 {
@@ -169,44 +205,69 @@ void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
     size_t leftd_pitch, rightd_pitch;
     cudaMallocPitch(&leftd,  &leftd_pitch,  cols * sizeof(Tin), rows);
     cudaMallocPitch(&rightd, &rightd_pitch, cols * sizeof(Tin), rows);
-    cudaMemcpy2D(leftd,  leftd_pitch,  left,  left_pitch,  cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
-    cudaMemcpy2D(rightd, rightd_pitch, right, right_pitch, cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
+    cudaMemcpy2D(leftd,  leftd_pitch,  left,  left_pitch,
+                 cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
+    cudaMemcpy2D(rightd, rightd_pitch, right, right_pitch,
+                 cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
 
     // Pre-process both of the input images using the LoG.
     Tlog *leftd_log, *rightd_log;
     size_t leftd_log_pitch, rightd_log_pitch;
     cudaMallocPitch(&leftd_log,  &leftd_log_pitch,  cols * sizeof(Tlog), rows);
     cudaMallocPitch(&rightd_log, &rightd_log_pitch, cols * sizeof(Tlog), rows);
-    LaplacianOfGaussianD<Tin, Tlog>(leftd,  leftd_log,  leftd_pitch,  leftd_log_pitch,  rows, cols);
-    LaplacianOfGaussianD<Tin, Tlog>(rightd, rightd_log, rightd_pitch, rightd_log_pitch, rows, cols);
+    LaplacianOfGaussianD<Tin, Tlog>(leftd,  leftd_log,  leftd_pitch,
+                                    leftd_log_pitch,  rows, cols);
+    LaplacianOfGaussianD<Tin, Tlog>(rightd, rightd_log, rightd_pitch,
+                                    rightd_log_pitch, rows, cols);
     cudaFree(leftd);
     cudaFree(rightd);
 
     // Calculate the horizontal integral image for every possible disparity.
-    vector<Terr *> errord(MAX_DISPARITY + 1);
+    Terr *sadd;
     size_t sadd_pitch;
+    cudaMallocPitch(&sadd, &sadd_pitch, cols * sizeof(Terr),
+                    rows * (MAX_DISPARITY + 1));
     for (int d = 0; d <= MAX_DISPARITY; d++) {
-        Terr *sadd;
-
-        cudaMallocPitch(&sadd, &sadd_pitch, cols * sizeof(Terr), rows);
+        Terr *sadd_level = &index(sadd, d * rows, 0, sadd_pitch);
 
         HorizontalSAD<Tlog, Terr><<<Dg, Db>>>(
-            leftd_log, rightd_log, sadd,
+            leftd_log, rightd_log, sadd_level,
             left_pitch, right_pitch, sadd_pitch,
             rows, cols, SAD_COLS, 0
         );
         VerticalIntegral<Terr><<<(cols + 1)/tpb, tpb>>>(
-            sadd, sadd_pitch, rows, cols
+            sadd_level, sadd_pitch, rows, cols
         );
-
-        errord[d] = sadd;
     }
     cudaFree(leftd_log);
     cudaFree(rightd_log);
 
-    for (int d = 0; d <= MAX_DISPARITY; d++) {
-        cudaFree(errord[d]);
+    //
+    Tdisp *disparityd;
+    size_t disparityd_pitch;
+    cudaMallocPitch(&disparityd,  &disparityd_pitch,  cols * sizeof(Tdisp), rows);
+    BestDisparity<Terr, Tdisp><<<Dg, Db>>>(
+        sadd, disparityd,
+        sadd_pitch, disparityd_pitch,
+        rows, cols, SAD_ROWS, MAX_DISPARITY, 
+        numeric_limits<Terr>::max());
+
+    cudaMemcpy2D(dst, dst_pitch, disparityd, disparityd_pitch,
+                 cols * sizeof(Tdisp), rows, cudaMemcpyDeviceToHost);
+
+    // TODO: debug
+    Terr *debug = new Terr[rows * cols];
+    cudaMemcpy2D(debug, cols * sizeof(Terr), sadd, sadd_pitch,
+                 cols * sizeof(Terr), rows, cudaMemcpyDeviceToHost);
+    for (int r = 0; r < rows; r++)
+    for (int c = 0; c < cols; c++) {
+        index(dst, r, c, dst_pitch) = (Tdisp)index(debug, r, c, cols * sizeof(Terr));
     }
+    // TODO: debug
+
+    // Clean up device memory.
+    cudaFree(disparityd);
+    cudaFree(sadd);
 }
 
 template void StereoBM<uint8_t, int16_t, int32_t, int16_t>(
