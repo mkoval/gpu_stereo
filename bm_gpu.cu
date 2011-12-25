@@ -1,7 +1,10 @@
 #include <cmath>
+#include <vector>
 #include <stdint.h>
 #include <cuda_runtime.h>
 #include "bm_gpu.hpp"
+
+using std::vector;
 
 namespace gpu {
 
@@ -139,6 +142,19 @@ void HorizontalSAD(Tsrc const *const left, Tsrc const *const right, Tdst *const 
     index(dst, r0, c0, dst_pitch) = diff;
 }
 
+template <typename T>
+__global__
+void VerticalIntegral(T *img, size_t img_pitch, int rows, int cols)
+{
+    int const c = threadIdx.x + blockIdx.x * blockDim.x;
+
+    for (int r = 1; r < rows; r++) {
+        T const &dst1_px = index(img, r - 1, c, img_pitch);
+        T       &dst2_px = index(img, r - 0, c, img_pitch);
+        dst2_px += dst1_px;
+    }
+}
+
 template <typename Tin, typename Tlog, typename Terr, typename Tout>
 __host__
 void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
@@ -167,15 +183,30 @@ void StereoBM(Tin const *const left, Tin const *const right, Tout *const dst,
     cudaFree(rightd);
 
     // Calculate the horizontal integral image for every possible disparity.
-    Terr *dstd;
-    size_t dstd_pitch;
-    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Terr), rows);
-    HorizontalSAD<<<Dg, Db>>>(left, right, dstd, left_pitch, right_pitch, dstd_pitch, rows, cols, SAD_ROWS, 0);
+    vector<Terr *> errord(MAX_DISPARITY + 1);
+    size_t sadd_pitch;
+    for (int d = 0; d <= MAX_DISPARITY; d++) {
+        Terr *sadd;
+
+        cudaMallocPitch(&sadd, &sadd_pitch, cols * sizeof(Terr), rows);
+
+        HorizontalSAD<Tlog, Terr><<<Dg, Db>>>(
+            leftd_log, rightd_log, sadd,
+            left_pitch, right_pitch, sadd_pitch,
+            rows, cols, SAD_COLS, 0
+        );
+        VerticalIntegral<Terr><<<(cols + 1)/tpb, tpb>>>(
+            sadd, sadd_pitch, rows, cols
+        );
+
+        errord[d] = sadd;
+    }
     cudaFree(leftd_log);
     cudaFree(rightd_log);
 
-    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch, cols * sizeof(Terr), rows, cudaMemcpyDeviceToHost);
-    cudaFree(dstd);
+    for (int d = 0; d <= MAX_DISPARITY; d++) {
+        cudaFree(errord[d]);
+    }
 }
 
 template void StereoBM<uint8_t, int16_t, int32_t, int16_t>(
