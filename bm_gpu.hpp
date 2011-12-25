@@ -10,6 +10,11 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
                          size_t src_pitch, size_t dst_pitch,
                          int rows, int cols);
 
+template <typename Tin, typename Tlog, typename Terr, typename Tout>
+void StereoBM(Tin const *const left, Tin const *const right, Tout *const disparity,
+              size_t left_pitch, size_t right_pitch, size_t disparity_pitch,
+              int rows, int cols, int max_disparity);
+
 }
 
 #endif

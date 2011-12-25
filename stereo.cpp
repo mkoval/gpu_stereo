@@ -53,24 +53,19 @@ int main(int argc, char **argv)
     }
 
     // Time the algorithm over a large number of iterations.
-    StereoBM opencv_matcher(StereoBM::BASIC_PRESET, 64, 21);
     Mat disparity;
-
-    for (int i = 0; i < repeats; i++) {
-        if (algo == "opencv_cpu") {
-            opencv_matcher(left, right, disparity);
-        } else if (algo == "custom_cpu") {
-            cpu::MatchBM(left, right, disparity, 64, 21);
-        } else {
-            cerr << "err: unknown algorithm" << endl;
-            return 1;
-        }
-    }
-
     disparity.create(left.rows, left.cols, CV_16SC1);
-    gpu::LaplacianOfGaussian<uint8_t, int16_t>(
-        left.ptr<uint8_t>(0), disparity.ptr<int16_t>(0),
-        left.step[1], disparity.step[1],
+
+#if 0
+    gpu::StereoBM<uint8_t, int16_t, int32_t, int16_t>(
+        left.ptr<uint8_t>(0), right.ptr<uint8_t>(0), disparity.ptr<int16_t>(0),
+        left.step[0], right.step[0], disparity.step[0],
+        left.rows, left.cols, 64
+    );
+#endif
+    gpu::LaplacianOfGaussian(
+        left.data, (int16_t *)disparity.data,
+        left.cols * sizeof(uint8_t), left.cols * sizeof(int16_t),
         left.rows, left.cols
     );
 
