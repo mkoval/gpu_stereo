@@ -52,6 +52,22 @@ void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
 
 template <typename Tin, typename Tout>
 __host__
+void LaplacianOfGaussianD(Tin const *const srcd, Tout *const dstd,
+                          size_t srcd_pitch, size_t dstd_pitch,
+                          size_t rows, size_t cols)
+{
+    // Split the image into as many sqrt(WSIZE)*sqrt(WSIZE) blocks as is needed
+    // to cover the entire image. This guarantees that there are approximately
+    // WSIZE threads per block. Then, solve for the convolution using one thread
+    // per pixel.
+    int const tpb = (int)floor(sqrt(WSIZE));
+    convolve<Tin, int8_t, Tout, KERNEL_LOG_ROWS, KERNEL_LOG_COLS>
+            <<<dim3((cols + 1)/tpb, (rows + 1)/tpb), dim3(tpb, tpb)>>>
+            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, srcd_pitch, dstd_pitch);
+}
+
+template <typename Tin, typename Tout>
+__host__
 void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
                          size_t src_pitch, size_t dst_pitch,
                          size_t rows, size_t cols)
@@ -68,14 +84,11 @@ void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
     size_t dstd_pitch;
     cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
 
-    // Split the image into as many sqrt(WSIZE)*sqrt(WSIZE) blocks as is needed
-    // to cover the entire image. This guarantees that there are approximately
-    // WSIZE threads per block. Then, solve for the convolution using one thread
-    // per pixel.
-    int const tpb = (int)floor(sqrt(WSIZE));
-    convolve<Tin, int8_t, Tout, KERNEL_LOG_ROWS, KERNEL_LOG_COLS>
-            <<<dim3((cols + 1)/tpb, (rows + 1)/tpb), dim3(tpb, tpb)>>>
-            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, srcd_pitch, dstd_pitch);
+    LaplacianOfGaussianD<Tin, Tout>(
+        srcd, dstd,
+        srcd_pitch, dstd_pitch,
+        rows, cols
+    );
 
     // Copy the result back to the host.
     cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch,
