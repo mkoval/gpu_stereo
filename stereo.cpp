@@ -1,6 +1,5 @@
 #include <iostream>
 #include <string>
-#include <sstream>
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -37,7 +36,7 @@ static int const DISPARITIES = 64;
 
 int main(int argc, char **argv)
 {
-    if (argc <= 4) {
+    if (argc <= 3) {
         std::cerr << "err: incorrect number of arguments\n"
                   << "usage: ./stereo <left image> <right image> <repeats>\n";
         return 1;
@@ -47,10 +46,6 @@ int main(int argc, char **argv)
     Mat const right = cv::imread(argv[2], 0);
     std::string const algo = argv[3];
 
-    int repeats;
-    std::stringstream ss(argv[4]);
-    ss >> repeats;
-
     if (left.rows != right.rows || left.cols != right.cols) {
         std::cerr << "err: both images must be the same size\n";
         return 1;
@@ -58,29 +53,27 @@ int main(int argc, char **argv)
 
     Mat disparity;
     timeval_t before = timer();
-    for (int repeat = 0; repeat < repeats; repeat++) {
-        if (algo == "cpu_opencv") {
-            StereoBM bm(StereoBM::BASIC_PRESET, DISPARITIES, SAD_SIZE);
-            bm(left, right, disparity);
-        } else if (algo == "cpu_custom") {
-            cpu::MatchBM(left, right, disparity, DISPARITIES, SAD_SIZE);
-        } else if (algo == "gpu_opencv") {
-            GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
-            StereoBM_GPU bm(StereoBM_GPU::PREFILTER_XSOBEL, DISPARITIES, SAD_SIZE);
-            bm(left_gpu, right_gpu, disparity_gpu);
-            disparity = disparity_gpu;
-        } else if (algo == "gpu_custom") {
-            GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
-            gpu::sadbm(left_gpu, right_gpu, disparity_gpu);
-            disparity = disparity_gpu;
-        } else {
-            cerr << "err: unknown algorithm" << endl;
-            return 1;
-        }
+    if (algo == "cpu_opencv") {
+        StereoBM bm(StereoBM::BASIC_PRESET, DISPARITIES, SAD_SIZE);
+        bm(left, right, disparity);
+    } else if (algo == "cpu_custom") {
+        cpu::MatchBM(left, right, disparity, DISPARITIES, SAD_SIZE);
+    } else if (algo == "gpu_opencv") {
+        GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+        StereoBM_GPU bm(StereoBM_GPU::PREFILTER_XSOBEL, DISPARITIES, SAD_SIZE);
+        bm(left_gpu, right_gpu, disparity_gpu);
+        disparity = disparity_gpu;
+    } else if (algo == "gpu_custom") {
+        GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+        gpu::sadbm(left_gpu, right_gpu, disparity_gpu);
+        disparity = disparity_gpu;
+    } else {
+        cerr << "err: unknown algorithm" << endl;
+        return 1;
     }
     timeval_t after = timer();
 
-    cout << (duration(before, after) / repeats) << std::endl;
+    cout << duration(before, after) << endl;
     
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
