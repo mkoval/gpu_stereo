@@ -1,19 +1,25 @@
-#!/bin/sh
+#!/bin/bash
 
 img_left='images/left.png'
 img_right='images/right.png'
-threads_max=2
-repeats=3
+algorithms=( cpu_opencv cpu_custom gpu_opencv gpu_custom )
+threads_max=48
+repeats=20
 
-for threads in `seq 1 $threads_max`; do
-    export OMP_NUM_THREADS=$threads
-    sum=0
+for algorithm in ${algorithms[@]}; do
+    file="data/$algorithm.csv"
+    /bin/echo -n > $file
 
-    for repeat in `seq 1 $repeats`; do
-        sample=`./stereo $img_left $img_right cpu_custom $repeats`
-        sum=`echo "$sum + $sample" | bc`
+    for threads in `seq 1 $threads_max`; do
+        export OMP_NUM_THREADS=$threads
+        sum=0
+
+        for repeat in `seq 1 $repeats`; do
+            sample=`./stereo $img_left $img_right $algorithm $repeats`
+            sum=`echo "$sum + $sample" | bc`
+        done
+
+        /bin/echo -n "$threads," >> $file
+        echo "scale=5;$sum / $repeats" | bc >> $file
     done
-
-    /bin/echo -n "$threads,"
-    echo "scale=5;$sum / $repeats" | bc
 done
