@@ -30,6 +30,7 @@ static void convolve(Mat const &src, Mat &dst, Mat const &ker)
 
     dst.create(src.rows, src.cols, CV_MAKETYPE(DataType<Tout>::depth, 1));
 
+    #pragma omp parallel for
     for (int r0 = ker.rows/2; r0 < src.rows - ker.rows/2; r0++) {
         Tout *const dst_row = dst.ptr<Tout>(r0);
 
@@ -90,6 +91,7 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
     // O(w*h*D) + O(w*h) complexity. This reduces the complexity of the
     // disparity calculation from O(w*h*D^2) to O(w*h*D).
     vector<Mat> precomp_sad(D + 1);
+    #pragma omp parallel for
     for (int d = 0; d <= D; d++) {
         Mat sad(left.rows, left.cols, CV_MAKETYPE(DataType<Terr>::depth, 1),
                 Scalar::all(0));
@@ -120,6 +122,7 @@ static void MatchBM(Mat const &left, Mat const &right, Mat &disparity,
         precomp_sad[d] = sad;
     }
 
+    #pragma omp parallel for
     for (int r0 = Wrows/2; r0 < left.rows - Wrows/2; r0++) {
         Tout *const disparity_row = disparity.ptr<Tout>(r0);
 

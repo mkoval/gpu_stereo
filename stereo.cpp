@@ -19,7 +19,8 @@
 #endif
 
 #include "bm_cpu.hpp"
-#include "bm_cvgpu.hpp"
+#include "bm_gpu.hpp"
+#include "util.hpp"
 
 using cv::Mat;
 using cv::Range;
@@ -30,6 +31,9 @@ using cv::gpu::StereoBM_GPU;
 using std::cerr;
 using std::cout;
 using std::endl;
+
+static int const SAD_SIZE    = 21;
+static int const DISPARITIES = 64;
 
 int main(int argc, char **argv)
 {
@@ -52,10 +56,32 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // Time the algorithm over a large number of iterations.
     Mat disparity;
-    gpu::LaplacianOfGaussian(left, disparity);
+    timer_t before = timer();
+    for (int repeat = 0; repeat < repeats; repeat++) {
+        if (algo == "cpu_opencv") {
+            StereoBM bm(StereoBM::BASIC_PRESET, DISPARITIES, SAD_SIZE);
+            bm(left, right, disparity);
+        } else if (algo == "cpu_custom") {
+            cpu::MatchBM(left, right, disparity, DISPARITIES, SAD_SIZE);
+        } else if (algo == "gpu_opencv") {
+            GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+            StereoBM_GPU bm(StereoBM_GPU::PREFILTER_XSOBEL, DISPARITIES, SAD_SIZE);
+            bm(left_gpu, right_gpu, disparity_gpu);
+            disparity = disparity_gpu;
+        } else if (algo == "gpu_custom") {
+            GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+            gpu::sadbm(left_gpu, right_gpu, disparity_gpu);
+            disparity = disparity_gpu;
+        } else {
+            cerr << "err: unknown algorithm" << endl;
+            return 1;
+        }
+    }
+    timer_t after = timer();
 
+    cout << (duration(before, after) / repeats) << std::endl;
+    
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
     cv::imwrite("disparity.png", disparity_norm);

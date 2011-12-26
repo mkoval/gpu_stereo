@@ -3,24 +3,13 @@ NVCC = nvcc
 LD   = g++
 CUDA_PATH  = /usr/local/cuda
 TARGET     = stereo
-CXXFLAGS  := $(shell pkg-config --cflags opencv) -I$(CUDA_PATH)/include -pedantic -Wall -O3 -march=native -flto
+CXXFLAGS  := $(shell pkg-config --cflags opencv) -I$(CUDA_PATH)/include -pedantic -Wall -O3 -flto -fopenmp
 NVCCFLAGS := -O3
-LDFLAGS   := $(CXXFLAGS) -L$(CUDA_PATH)/lib $(shell pkg-config --libs opencv) -lopencv_gpu -lcuda -lcudart
-OBJECTS    = stereo.cpp.o bm_cpu.cpp.o bm_gpu.cu.o bm_cvgpu.cpp.o
-
-MAKEFLAGS += -r
-
-ifeq ($(mode), debug)
-$(warning Debug Mode)
-CXXFLAGS  += -O0 -g
-NVCCFLAGS  = -g
-LDFLAGS   += -g
-endif
+LDFLAGS   := $(CXXFLAGS) -L$(CUDA_PATH)/lib $(shell pkg-config --libs opencv) -lm -lopencv_gpu -lcuda -lcudart
+OBJECTS    = stereo.cpp.o util.cpp.o bm_cpu.cpp.o bm_gpu.cpp.o bm_gpu.cu.o
 
 ifeq ($(shell uname), Darwin)
-CXX = clang++
-LD  = clang++
-LDFLAGS   += -rpath $(CUDA_PATH)/lib
+LDFLAGS   += -Xlinker -rpath /usr/local/cuda/lib
 NVCCFLAGS += --machine=64
 endif
 

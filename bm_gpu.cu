@@ -1,189 +1,181 @@
 #include <cmath>
-#include <vector>
+#include <cstdio>
+#include <limits>
 #include <stdint.h>
-#include <cuda_runtime.h>
-#include "bm_gpu.hpp"
+#include <opencv2/gpu/devmem2d.hpp>
 
-using std::vector;
-
-namespace gpu {
-
-__device__ __constant__ int8_t const KERNEL_LOG[9][9] = {
-    { 0, 1, 1,   2,   2,   2, 1, 1, 0 },
-    { 1, 2, 4,   5,   5,   5, 4, 2, 1 },
-    { 1, 4, 5,   3,   0,   3, 5, 4, 1 },
-    { 2, 5, 3, -12, -24, -12, 3, 5, 2 },
-    { 2, 5, 0, -24, -40, -24, 0, 5, 2 },
-    { 2, 5, 3, -12, -24, -12, 3, 5, 2 },
-    { 1, 4, 5,   3,   0,   3, 5, 4, 1 },
-    { 1, 2, 4,   5,   5,   5, 4, 2, 1 },
-    { 0, 1, 1,   2,   2,   2, 1, 1, 0 }
-};
-
-#define KERNEL_LOG_ROWS 9
-#define KERNEL_LOG_COLS 9
 #define WSIZE 32
 
-template <typename T> __host__ __device__ T abs(T x)
+using cv::gpu::DevMem2D_;
+using std::numeric_limits;
+
+template <typename T>
+__host__ __device__
+static T abs(T const &x)
 {
     return (x >= 0) ? x : -x;
 }
 
-template <typename Tin, typename Tker, typename Tout,
-          size_t Krows, size_t Kcols>
+namespace gpu {
+
+template <typename Tsrc, typename Tker, typename Tdst>
 __global__
-void convolve(Tin const *const src, Tout *const dst, Tker const *const ker,
-              int rows, int cols, size_t src_pitch, size_t dst_pitch)
+void convolve(DevMem2D_<Tsrc> const src, DevMem2D_<Tker> const ker,
+               DevMem2D_<Tdst> dst)
 {
-    int const r0 = threadIdx.x + blockIdx.x * blockDim.x;
-    int const c0 = threadIdx.y + blockIdx.y * blockDim.y;
+    int const r0 = blockDim.y * blockIdx.y + threadIdx.y;
+    int const c0 = blockDim.x * blockIdx.x + threadIdx.x;
+    int const r_offset = ker.rows / 2;
+    int const c_offset = ker.cols / 2;
 
-    // This divergent execution path won't harm efficiency too much because one
-    // of the paths terminates after a few clock cycles.
-    if (Krows/2 <= r0 && r0 < rows - Krows/2
-     && Kcols/2 <= c0 && c0 < cols - Kcols/2) {
-        Tout value = 0;
+    if (r_offset <= r0 && r0 < src.rows - r_offset
+     && c_offset <= c0 && c0 < src.cols - c_offset) {
+        Tdst response = 0;
 
-        for (int dr = 0; dr < Krows; dr++)
-        for (int dc = 0; dc < Kcols; dc++) {
-            int const r = r0 + dr - Krows/2;
-            int const c = c0 + dc - Kcols/2;
-            value += ker[dr * Kcols + dc] * (Tout)src[r * src_pitch + c];
+        for (int dr = 0; dr < ker.rows; dr++) {
+            Tsrc const *const src_row = src.ptr(r0 + dr - r_offset);
+            Tker const *const ker_row = ker.ptr(dr);
+
+            for (int dc = 0; dc < ker.cols; dc++) {
+                response += (Tdst)src_row[c0 + dc - c_offset] * ker_row[dc];
+            }
         }
 
-        dst[r0 * dst_pitch + c0] = value;
-    }
-    // Some blocks may extend off the edge of the image if either of its
-    // dimensions are not evenly divisible by WSIZE. This additional check
-    // prevents writing to invalid memory.
-    else if (0 <= r0 && r0 < rows && 0 <= c0 && c0 < cols) {
-        dst[r0 * dst_pitch + c0] = 0;
+        dst.ptr(r0)[c0] = response;
     }
 }
 
-template <typename Tin, typename Tout>
+template <typename Tsrc, typename Tker, typename Tdst>
 __host__
-void LaplacianOfGaussianD(Tin const *const srcd, Tout *const dstd,
-                          size_t srcd_pitch, size_t dstd_pitch,
-                          int rows, int cols)
+void convolve_caller(DevMem2D_<Tsrc> src, DevMem2D_<Tker> ker,
+                     DevMem2D_<Tdst> dst)
 {
-    // Split the image into as many sqrt(WSIZE)*sqrt(WSIZE) blocks as is needed
-    // to cover the entire image. This guarantees that there are approximately
-    // WSIZE threads per block. Then, solve for the convolution using one thread
-    // per pixel.
-    int const tpb = (int)floor(sqrt(WSIZE));
-    convolve<Tin, int8_t, Tout, KERNEL_LOG_ROWS, KERNEL_LOG_COLS>
-            <<<dim3((cols + 1)/tpb, (rows + 1)/tpb), dim3(tpb, tpb)>>>
-            (srcd, dstd, (int8_t const*)KERNEL_LOG, rows, cols, srcd_pitch, dstd_pitch);
-}
-
-template <typename Tin, typename Tout>
-__host__
-void LaplacianOfGaussian(Tin const *const src, Tout *const dst,
-                         size_t src_pitch, size_t dst_pitch,
-                         int rows, int cols)
-{
-    // Copy the input image to the device.
-    Tin *srcd;
-    size_t srcd_pitch;
-    cudaMallocPitch(&srcd, &srcd_pitch, cols * sizeof(Tin), rows);
-    cudaMemcpy2D(srcd, srcd_pitch, src, src_pitch,
-                 cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
-
-    // Allocate a buffer for the output on the device.
-    Tout *dstd;
-    size_t dstd_pitch;
-    cudaMallocPitch(&dstd, &dstd_pitch, cols * sizeof(Tout), rows);
-
-    LaplacianOfGaussianD<Tin, Tout>(
-        srcd, dstd,
-        srcd_pitch, dstd_pitch,
-        rows, cols
-    );
-
-    cudaMemcpy2D(dst, dst_pitch, dstd, dstd_pitch,
-                 cols * sizeof(Tout), rows, cudaMemcpyDeviceToHost);
-
-    cudaFree(srcd);
-    cudaFree(dstd);
-}
-
-template void LaplacianOfGaussian(uint8_t const *const src, int16_t *const dst,
-                                  size_t src_pitch, size_t dst_pitch,
-                                  int rows, int cols);
-
-template <typename Tin, typename Terr>
-__global__
-void StereoHorSAD(Tin const *const left, Tin const *const right, Terr *const horsad,
-                  size_t left_pitch, size_t right_pitch, size_t horsad_pitch,
-                  int window_cols, int rows, int cols, int d)
-{
-    int const r  = threadIdx.y + blockIdx.y * blockDim.y;
-    int const c0 = threadIdx.x + blockIdx.x * blockDim.x;
-    Terr error = 0;
-
-    if (window_cols/2 + d <= c0 && c0 < cols - window_cols/2) {
-        for (int dc = 0; dc < window_cols; dc++) {
-            int const c_left  = c0 + dc - window_cols/2;
-            int const c_right = c0 + dc - d - window_cols/2;
-            error += abs<Terr>((Terr)left[r * left_pitch + c_left]
-                             - (Terr)right[r * right_pitch + c_right]);
-        }
-    }
-    horsad[r * horsad_pitch + c0] = error;
-}
-
-template <typename Tin, typename Tlog, typename Terr, typename Tout>
-__host__
-void StereoBM(Tin const *const left, Tin const *const right, Tout *const disparity,
-              size_t left_pitch, size_t right_pitch, size_t disparity_pitch,
-              int rows, int cols, int max_disparity)
-{
-    int const tpb = WSIZE;
-    dim3 const Dg((cols + 1)/tpb, (rows + 1)/tpb);
+    int const tpb = (int)sqrt(WSIZE);
+    dim3 const Dg((src.cols + 1)/tpb, (src.rows + 1)/tpb);
     dim3 const Db(tpb, tpb);
-
-    // Copy the images to the device.
-    Tin *leftd, *rightd;
-    size_t leftd_pitch, rightd_pitch;
-    cudaMallocPitch(&leftd, &leftd_pitch, cols * sizeof(Tin), rows);
-    cudaMallocPitch(&rightd, &rightd_pitch, cols * sizeof(Tin), rows);
-    cudaMemcpy2D(leftd, leftd_pitch, left, left_pitch, cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
-    cudaMemcpy2D(rightd, rightd_pitch, right, right_pitch, cols * sizeof(Tin), rows, cudaMemcpyHostToDevice);
-
-    // Compute the LoG of the left and right images as a simple form of feature
-    // extraction.
-    Tlog *leftd_log, *rightd_log;
-    size_t leftd_log_pitch, rightd_log_pitch;
-    cudaMallocPitch(&leftd_log,  &leftd_log_pitch,  cols * sizeof(Tlog), rows);
-    cudaMallocPitch(&rightd_log, &rightd_log_pitch, cols * sizeof(Tlog), rows);
-
-    LaplacianOfGaussianD<Tin, Tlog>(
-        leftd, leftd_log,
-        leftd_pitch, leftd_log_pitch,
-        rows, cols
-    );
-    LaplacianOfGaussianD<Tin, Tlog>(
-        rightd, rightd_log,
-        rightd_pitch, rightd_log_pitch,
-        rows, cols
-    );
-
-    // Copy the result back onto the host.
-    cudaMemcpy2D(disparity, disparity_pitch, leftd, leftd_pitch,
-                 cols * sizeof(Tlog), rows, cudaMemcpyDeviceToHost);
-
-    // Cleanup.
-    cudaFree(leftd_log);
-    cudaFree(rightd_log);
-    cudaFree(leftd);
-    cudaFree(rightd);
+    convolve<Tsrc, Tker, Tdst><<<Dg, Db>>>(src, ker, dst);
 }
 
-template void StereoBM<uint8_t, int16_t, int32_t, int16_t>(
-    uint8_t const *const left, uint8_t const *const right, int16_t *const disparity,
-    size_t left_pitch, size_t right_pitch, size_t disparity_pitch,
-    int rows, int cols, int max_disparity
-);
+template __host__ void convolve_caller<uint8_t, int8_t, int16_t>(
+    DevMem2D_<uint8_t> src, DevMem2D_<int8_t> ker, DevMem2D_<int16_t> dst);
+
+/****************************************************************************/
+
+template <typename Tsrc, typename Tdst>
+__global__
+void sad_hor(DevMem2D_<Tsrc> left, DevMem2D_<Tsrc> right, DevMem2D_<Tdst> sad,
+             int window_cols, int disparity)
+{
+    int const r0 = blockDim.y * blockIdx.y + threadIdx.y;
+    int const c0 = blockDim.x * blockIdx.x + threadIdx.x;
+    Tsrc const *const left_row  = left.ptr(r0);
+    Tsrc const *const right_row = right.ptr(r0);
+    int const offset = window_cols / 2;
+
+    if (offset + disparity <= c0 && c0 < left.cols - offset) {
+        Tdst sum = 0;
+        for (int dc = 0; dc < window_cols; dc++) {
+            Tsrc const left_px  = left_row[c0 + dc - offset];
+            Tsrc const right_px = right_row[c0 + dc - offset - disparity];
+            sum += abs<Tdst>((Tdst)left_px - (Tdst)right_px);
+        }
+        sad.ptr(r0)[c0] = sum;
+    } else if (0 <= c0 && c0 < left.cols) {
+        sad.ptr(r0)[c0] = 0;
+    }
+}
+
+template <typename Tsrc, typename Tdst>
+__host__
+void sad_hor_caller(DevMem2D_<Tsrc> left, DevMem2D_<Tsrc> right,
+                     DevMem2D_<Tdst> sad, int window_cols, int disparity)
+{
+    int const tpb = (int)sqrt(WSIZE);
+    dim3 const Dg((left.cols + 1)/tpb, (left.rows + 1)/tpb);
+    dim3 const Db(tpb, tpb);
+    sad_hor<Tsrc, Tdst><<<Dg, Db>>>(left, right, sad, window_cols, disparity);
+}
+
+template __host__ void sad_hor_caller<int16_t, int32_t>(
+    DevMem2D_<int16_t> left, DevMem2D_<int16_t> right, DevMem2D_<int32_t> sad,
+    int window_cols, int disparity);
+
+/****************************************************************************/
+
+template <typename T>
+__global__
+void sad_ver(DevMem2D_<T> sad)
+{
+    int const c = blockDim.x * blockIdx.x + threadIdx.x;
+    T sum = 0;
+    
+    if (0 <= c && c < sad.cols) {
+        for (int r = 0; r < sad.rows; r++) {
+            sum = (sad.ptr(r)[c] += sum);
+        }
+    }
+}
+
+template <typename T>
+__host__
+void sad_ver_caller(DevMem2D_<T> sad)
+{
+    int const tpb = (int)sqrt(WSIZE);
+    sad_ver<T><<<(sad.cols + 1)/tpb, tpb>>>(sad);
+}
+
+template __host__ void sad_ver_caller<int32_t>(DevMem2D_<int32_t> sad);
+
+/****************************************************************************/
+
+template <typename Tsrc, typename Tdst>
+__global__
+void disparity_picker(DevMem2D_<Tsrc> integrals, DevMem2D_<Tdst> disparity,
+                      int rows, int sad_rows, int sad_cols,
+                      int maxd, Tsrc max_error)
+{
+    int const r0 = blockDim.y * blockIdx.y + threadIdx.y;
+    int const c0 = blockDim.x * blockIdx.x + threadIdx.x;
+    int const r_offset = sad_rows / 2;
+    int const c_offset = sad_cols / 2;
+    Tdst best_disp  = 0;
+    Tsrc best_error = max_error;
+
+    if (r_offset <= r0 && r0 <           rows - r_offset
+     && c_offset <= c0 && c0 < integrals.cols - c_offset) {
+        for (Tdst d = 0; d <= maxd; d++) {
+            Tsrc const error1 = integrals.ptr(d * rows + r0 - r_offset)[c0];
+            Tsrc const error2 = integrals.ptr(d * rows + r0 + r_offset)[c0];
+            Tsrc const error  = error2 - error1;
+
+            if (error < best_error) {
+                best_disp  = d;
+                best_error = error;
+            }
+        }
+        disparity.ptr(r0)[c0] = best_disp;
+    } else if (0 <= r0 && r0 < rows
+            && 0 <= c0 && c0 < integrals.cols)
+    {
+        disparity.ptr(r0)[c0] = 0;
+    }
+}
+
+template <typename Tsrc, typename Tdst>
+__host__
+void disparity_picker_caller(DevMem2D_<Tsrc> integrals, DevMem2D_<Tdst> disparity,
+                             int rows, int sad_rows, int sad_cols, int maxd)
+{
+    int const tpb = (int)sqrt(WSIZE);
+    dim3 const Dg((integrals.cols + 1)/tpb, (rows + 1)/tpb);
+    dim3 const Db(tpb, tpb);
+    disparity_picker<Tsrc, Tdst><<<Dg, Db>>>(integrals, disparity,
+                                             rows, sad_rows, sad_cols,
+                                             maxd, numeric_limits<Tsrc>::max());
+}
+
+template __host__ void disparity_picker_caller<int32_t, uint8_t>(
+    DevMem2D_<int32_t> integrals, DevMem2D_<uint8_t> disparity,
+    int rows, int sad_rows, int sad_cols, int maxd);
 
 }
