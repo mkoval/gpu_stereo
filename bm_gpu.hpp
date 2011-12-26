@@ -35,6 +35,9 @@ void sad_hor_caller(cv::gpu::DevMem2D_<Tsrc> left, cv::gpu::DevMem2D_<Tsrc> righ
                      cv::gpu::DevMem2D_<Tdst> sad,
                      int window_cols, int disparity);
 
+template <typename T>
+void sad_ver_caller(cv::gpu::DevMem2D_<T> sad);
+
 }
 
 #endif

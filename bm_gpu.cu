@@ -98,4 +98,30 @@ template __host__ void sad_hor_caller<int16_t, int32_t>(
     DevMem2D_<int16_t> left, DevMem2D_<int16_t> right, DevMem2D_<int32_t> sad,
     int window_cols, int disparity);
 
+/****************************************************************************/
+
+template <typename T>
+__global__
+void sad_ver(DevMem2D_<T> sad)
+{
+    int const c = blockDim.x * blockIdx.x + threadIdx.x;
+    T sum = 0;
+    
+    if (0 <= c && c < sad.cols) {
+        for (int r = 0; r < sad.rows; r++) {
+            sum = (sad.ptr(r)[c] += sum);
+        }
+    }
+}
+
+template <typename T>
+__host__
+void sad_ver_caller(DevMem2D_<T> sad)
+{
+    int const tpb = (int)sqrt(WSIZE);
+    sad_ver<T><<<(sad.cols + 1)/tpb, tpb>>>(sad);
+}
+
+template __host__ void sad_ver_caller<int32_t>(DevMem2D_<int32_t> sad);
+
 }

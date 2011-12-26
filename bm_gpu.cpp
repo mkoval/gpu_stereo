@@ -66,8 +66,9 @@ void sadbm(GpuMat const &left, GpuMat const &right, GpuMat &disparity)
 
         integral.create(left.rows, left.cols, CV_32SC1);
         sad_hor_caller<int16_t, int32_t>(left_log, right_log, integral, sad_cols, d);
+        sad_ver_caller<int32_t>(integral);
 
-        integral.convertTo(disparity, CV_16SC1);
+        integral.convertTo(disparity, CV_16SC1, 1.0/left.rows);
         break;
     }
 }
