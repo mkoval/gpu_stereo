@@ -48,7 +48,7 @@ void sadbm(GpuMat const &left, GpuMat const &right, GpuMat &disparity)
         1, 2, 4,   5,   5,   5, 4, 2, 1,
         0, 1, 1,   2,   2,   2, 1, 1, 0
     );
-    static int const max_disparity = 64;
+    static int const maxd = 64;
     static int const sad_rows = 21;
     static int const sad_cols = 21;
     GpuMat const kernel_log_gpu(kernel_log);
@@ -60,17 +60,19 @@ void sadbm(GpuMat const &left, GpuMat const &right, GpuMat &disparity)
     gpu::convolve(left, kernel_log_gpu, left_log);
     gpu::convolve(right, kernel_log_gpu, right_log);
 
-    vector<GpuMat> integrals(max_disparity + 1);
-    for (int d = 0; d <= max_disparity; d++) {
-        GpuMat &integral = integrals[d];
+    // Compute SAD integral images for each disparity level.
+    GpuMat integrals(left.rows * (maxd + 1), left.cols, CV_32SC1);
+    for (int d = 0; d <= maxd; d++) {
+        GpuMat integral = integrals.rowRange(d*left.rows, (d + 1)*left.rows);
 
         integral.create(left.rows, left.cols, CV_32SC1);
         sad_hor_caller<int16_t, int32_t>(left_log, right_log, integral, sad_cols, d);
         sad_ver_caller<int32_t>(integral);
-
-        integral.convertTo(disparity, CV_16SC1, 1.0/left.rows);
-        break;
     }
+
+    disparity.create(left.rows, left.cols, CV_8UC1);
+    disparity_picker_caller<int32_t, uint8_t>(integrals, disparity, left.rows,
+                                              sad_rows, sad_cols, maxd);
 }
 
 }

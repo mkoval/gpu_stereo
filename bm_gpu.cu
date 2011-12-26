@@ -1,11 +1,13 @@
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <stdint.h>
 #include <opencv2/gpu/devmem2d.hpp>
 
 #define WSIZE 32
 
 using cv::gpu::DevMem2D_;
+using std::numeric_limits;
 
 template <typename T>
 __host__ __device__
@@ -123,5 +125,57 @@ void sad_ver_caller(DevMem2D_<T> sad)
 }
 
 template __host__ void sad_ver_caller<int32_t>(DevMem2D_<int32_t> sad);
+
+/****************************************************************************/
+
+template <typename Tsrc, typename Tdst>
+__global__
+void disparity_picker(DevMem2D_<Tsrc> integrals, DevMem2D_<Tdst> disparity,
+                      int rows, int sad_rows, int sad_cols,
+                      int maxd, Tsrc max_error)
+{
+    int const r0 = blockDim.y * blockIdx.y + threadIdx.y;
+    int const c0 = blockDim.x * blockIdx.x + threadIdx.x;
+    int const r_offset = sad_rows / 2;
+    int const c_offset = sad_cols / 2;
+    Tdst best_disp  = 0;
+    Tsrc best_error = max_error;
+
+    if (r_offset <= r0 && r0 <           rows - r_offset
+     && c_offset <= c0 && c0 < integrals.cols - c_offset) {
+        for (Tdst d = 0; d <= maxd; d++) {
+            Tsrc const error1 = integrals.ptr(d * rows + r0 - r_offset)[c0];
+            Tsrc const error2 = integrals.ptr(d * rows + r0 + r_offset)[c0];
+            Tsrc const error  = error2 - error1;
+
+            if (error < best_error) {
+                best_disp  = d;
+                best_error = error;
+            }
+        }
+        disparity.ptr(r0)[c0] = best_disp;
+    } else if (0 <= r0 && r0 < rows
+            && 0 <= c0 && c0 < integrals.cols)
+    {
+        disparity.ptr(r0)[c0] = 0;
+    }
+}
+
+template <typename Tsrc, typename Tdst>
+__host__
+void disparity_picker_caller(DevMem2D_<Tsrc> integrals, DevMem2D_<Tdst> disparity,
+                             int rows, int sad_rows, int sad_cols, int maxd)
+{
+    int const tpb = (int)sqrt(WSIZE);
+    dim3 const Dg((integrals.cols + 1)/tpb, (rows + 1)/tpb);
+    dim3 const Db(tpb, tpb);
+    disparity_picker<Tsrc, Tdst><<<Dg, Db>>>(integrals, disparity,
+                                             rows, sad_rows, sad_cols,
+                                             maxd, numeric_limits<Tsrc>::max());
+}
+
+template __host__ void disparity_picker_caller<int32_t, uint8_t>(
+    DevMem2D_<int32_t> integrals, DevMem2D_<uint8_t> disparity,
+    int rows, int sad_rows, int sad_cols, int maxd);
 
 }

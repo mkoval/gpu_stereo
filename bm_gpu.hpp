@@ -38,6 +38,11 @@ void sad_hor_caller(cv::gpu::DevMem2D_<Tsrc> left, cv::gpu::DevMem2D_<Tsrc> righ
 template <typename T>
 void sad_ver_caller(cv::gpu::DevMem2D_<T> sad);
 
+template <typename Tsrc, typename Tdst>
+void disparity_picker_caller(cv::gpu::DevMem2D_<Tsrc> integrals,
+                             cv::gpu::DevMem2D_<Tdst> disparity,
+                             int rows, int sad_rows, int sad_cols, int maxd);
+
 }
 
 #endif
