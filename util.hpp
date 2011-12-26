@@ -3,9 +3,9 @@
 
 #include <sys/time.h>
 
-typedef struct timeval timer_t;
+typedef struct timeval timeval_t;
 
-timer_t timer(void);
-double duration(timer_t start, timer_t end);
+timeval_t timer(void);
+double duration(timeval_t start, timeval_t end);
 
 #endif

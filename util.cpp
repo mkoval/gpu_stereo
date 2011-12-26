@@ -2,14 +2,14 @@
 #include <sys/time.h>
 #include "util.hpp"
 
-timer_t timer(void)
+timeval_t timer(void)
 {
-    timer_t timer;
-    gettimeofday(&timer, NULL);
+    timeval_t timer;
+    gettimeofday(&timer, 0);
     return timer;
 }
 
-double duration(timer_t begin, timer_t end)
+double duration(timeval_t begin, timeval_t end)
 {
     double const secs  = begin.tv_sec - end.tv_sec;
     double const usecs = begin.tv_usec - end.tv_usec;

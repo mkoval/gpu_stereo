@@ -57,7 +57,7 @@ int main(int argc, char **argv)
     }
 
     Mat disparity;
-    timer_t before = timer();
+    timeval_t before = timer();
     for (int repeat = 0; repeat < repeats; repeat++) {
         if (algo == "cpu_opencv") {
             StereoBM bm(StereoBM::BASIC_PRESET, DISPARITIES, SAD_SIZE);
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    timer_t after = timer();
+    timeval_t after = timer();
 
     cout << (duration(before, after) / repeats) << std::endl;
     
