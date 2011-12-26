@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 
     cv::gpu::GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
     gpu::sadbm(left_gpu, right_gpu, disparity_gpu);
-    cv::Mat disparity = disparity_gpu;
+    cv::Mat disparity(disparity_gpu);
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);

@@ -27,8 +27,13 @@ void sadbm(cv::gpu::GpuMat const &left,
 /*************************************************************************/
 
 template <typename Tsrc, typename Tker, typename Tdst>
-void convolve_caller(DevMem2D_<Tsrc> src, DevMem2D_<Tker> ker,
-                     DevMem2D_<Tdst> dst);
+void convolve_caller(cv::gpu::DevMem2D_<Tsrc> src, cv::gpu::DevMem2D_<Tker> ker,
+                     cv::gpu::DevMem2D_<Tdst> dst);
+
+template <typename Tsrc, typename Tdst>
+void sad_hor_caller(cv::gpu::DevMem2D_<Tsrc> left, cv::gpu::DevMem2D_<Tsrc> right,
+                     cv::gpu::DevMem2D_<Tdst> sad,
+                     int window_cols, int disparity);
 
 }
 
