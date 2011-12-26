@@ -20,6 +20,16 @@ void convolve(cv::gpu::GpuMat const &src,
               cv::gpu::GpuMat const &ker,
               cv::gpu::GpuMat       &dst);
 
+void sadbm(cv::gpu::GpuMat const &left,
+           cv::gpu::GpuMat const &right,
+           cv::gpu::GpuMat       &disparity);
+
+/*************************************************************************/
+
+template <typename Tsrc, typename Tker, typename Tdst>
+void convolve_caller(DevMem2D_<Tsrc> src, DevMem2D_<Tker> ker,
+                     DevMem2D_<Tdst> dst);
+
 }
 
 #endif

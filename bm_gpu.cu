@@ -51,3 +51,13 @@ template __host__ void convolve_caller<uint8_t, int8_t, int16_t>(
     DevMem2D_<uint8_t> src, DevMem2D_<int8_t> ker, DevMem2D_<int16_t> dst);
 
 }
+
+/****************************************************************************/
+
+template <typename Tsrc, typename Terr, typename Tdst>
+__host__
+void sadbm_caller(DevMem2D_<Tsrc> left, DevMem2D_<Tsrc> right,
+                  DevMem2D_<Tdst> disparity, 
+                  int max_disparity, int sad_rows, int sad_cols)
+{
+}

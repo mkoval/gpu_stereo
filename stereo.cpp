@@ -52,21 +52,9 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    cv::Mat const kernel = (cv::Mat_<int8_t>(9, 9) <<
-        0, 1, 1,   2,   2,   2, 1, 1, 0,
-        1, 2, 4,   5,   5,   5, 4, 2, 1,
-        1, 4, 5,   3,   0,   3, 5, 4, 1,
-        2, 5, 3, -12, -24, -12, 3, 5, 2,
-        2, 5, 0, -24, -40, -24, 0, 5, 2,
-        2, 5, 3, -12, -24, -12, 3, 5, 2,
-        1, 4, 5,   3,   0,   3, 5, 4, 1,
-        1, 2, 4,   5,   5,   5, 4, 2, 1,
-        0, 1, 1,   2,   2,   2, 1, 1, 0
-    );
-
-    cv::gpu::GpuMat gpu_left(left), gpu_kernel(kernel), gpu_disp;
-    gpu::convolve(gpu_left, gpu_kernel, gpu_disp);
-    cv::Mat disparity = gpu_disp;
+    cv::gpu::GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+    gpu::sadbm(left_gpu, right_gpu, disparity_gpu);
+    cv::Mat disparity = disparity_gpu;
 
     Mat disparity_norm;
     cv::normalize(disparity, disparity_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1);
