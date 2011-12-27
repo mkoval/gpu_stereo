@@ -51,6 +51,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
+
+    // Use CUDA to force the dynamic library to load before starting the timer.
+    {
+    GpuMat left_gpu(left), right_gpu(right), disparity_gpu;
+    StereoBM_GPU bm(StereoBM_GPU::PREFILTER_XSOBEL, DISPARITIES, SAD_SIZE);
+    bm(left_gpu, right_gpu, disparity_gpu);
+    }
+
     Mat disparity;
     timeval_t before = timer();
     if (algo == "cpu_opencv") {
