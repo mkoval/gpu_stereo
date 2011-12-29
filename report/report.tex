@@ -24,7 +24,8 @@
          \def\partautorefname{Part}%
          \orgautoref}
 
-\DeclareMathOperator{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmax}
+\DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator{\LoG}{LoG}
 \DeclareMathOperator{\Window}{Window}
 \newcommand{\floor}[1]{\lfloor #1 \rfloor}
@@ -110,8 +111,18 @@ only one integral image is in memory at a given time.}
     \ENSURE $I_{disp} \in \{0, \cdots, d\}^{w \times h}$: disparity map
     \STATE $I_{left,log} \gets \LoG(I_{left})$
     \STATE $I_{right,log} \gets \LoG(I_{right})$
-    \FOR {$d \in \{0, \cdots, D\}$}
-    \STATE TODO
+    \STATE \COMMENT {compute vertical integral images of error}
+    \FOR {$d = 1 \to D$}
+        \FORALL {$(x_0, y_0) \in \{1, \cdots, w\} \times \{1, \cdots, h\}$}
+            \STATE $E_y^{(d)} \gets \sum_{\Delta x = -n/2}^{n/2}{
+                                      ||I_{left,log}[x_0 - \Delta x, y_0]
+                                      - I_{right_log}[x_0 - \Delta x - d, y_0]}$
+            \STATE $I_{sad}^{(d)}[x, y] \gets E_y + I_{sad}^{(d)}[x, y - 1]$
+        \ENDFOR
+    \ENDFOR
+    \STATE \COMMENT {choose the disparity for each pixel that minimizes error}
+    \FORALL {$(x_0, y_0) \in \{1, \cdots, w\} \times \{1, \cdots, h\}$}
+        \STATE $I_{disp}[x, y] \gets \argmin_{d \le D} I_{sad}^{(d)}[x, y + n/2] - I_{sad}^{(d)}[x, y - n/2]$
     \ENDFOR
     \end{algorithmic}
 \end{algorithm}
