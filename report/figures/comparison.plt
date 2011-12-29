@@ -1,12 +1,17 @@
 #!/usr/bin/env gnuplot
-set terminal epslatex size 2.75 in, 1.75 in
+set terminal epslatex size 4.5 in, 2.5 in
 set output "figures/comparison.tex"
 
 set boxwidth 1 relative
-set style data histograms
+set style data histogram
+set boxwidth 0.75 absolute
 set style fill solid 1.0 border -1
+set format x "\\footnotesize %g"
+
 set datafile separator ','
 
-set ylabel 'Time (s)'
+unset key
 
-plot './data/comparison.csv' using 2:xtic(1) with boxes
+set ylabel 'Average Time (s)'
+
+plot './data/comparison.csv' using 2:xticlabels("{\\footnotesize " . stringcolumn(1) . "}") with boxes

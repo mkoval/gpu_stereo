@@ -1,5 +1,5 @@
 #!/usr/bin/env gnuplot
-set terminal epslatex size 2.75 in, 1.75 in
+set terminal epslatex size 4.5 in, 2.5 in
 set output "figures/threads.tex"
 
 set datafile separator ','
