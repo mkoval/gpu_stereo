@@ -23,7 +23,7 @@ clean:
 
 %.pdf: %.tex %.bib
 	$(PDFLATEX) -interaction=nonstopmode $(basename $<)
-	#$(BIBTEX) $(basename $<)
+	$(BIBTEX) $(basename $<)
 	$(PDFLATEX) -interaction=nonstopmode $(basename $<)
 	$(PDFLATEX) -interaction=nonstopmode $(basename $<)
 
