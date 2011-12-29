@@ -1,0 +1,6 @@
+figures/*.eps
+figures/*.tex
+*.aux
+*.log
+*.out
+*.pdf
