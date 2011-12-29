@@ -145,8 +145,17 @@ defined as
           \abs{I_l[x - \Delta x, y] - I_r[x - d - \Delta x, y]},
 \end{align*}
 where $I_{sad}^{(d)}[x, -1] = 0$ is the base case. This is simple to calculate
-and has a time complexity of $\Theta(w h n)$. Using the technique described
-above, this reduces the overall complexity of the algorithm to $\Theta(whDn)$.
+and has a time complexity of $\Theta(w h n)$.
+
+From these integral images, generating the disparity is efficient. The
+disparity $d$ and pixel $(x, y)$, the SAD error of this pair is simply
+\begin{align*}
+    \SAD(p, d) = I_{sad}^{(d)}[x, y + n] - I_{sad}^{(d)}[x, y - n]
+\end{align*}
+because of the properties of integral images. From this, the disparity of this
+pixel is $I_{disp}[x, y] = \argmin_{d} \SAD(p, d)$, an operation that is
+possible in $\Theta(D)$ time. This means that the entire disparity map can be
+found in $\Theta(whD)$ time.
 
 \begin{algorithm}[t]
     \KwIn {$I_l, I_r \in \mathbb{R}^{w \times h}$: rectified stereo pair}
@@ -196,86 +205,107 @@ window'' algorithm. This algorithm has a time complexity of $\Theta(whk^2)$
 where $k$ is the width and height of the kernel. Because $k$ is constant
 parameter\footnote{Typically $k$ is small because of precision limits when
 discretizing the LoG function.}, this preprocessing step actually has a time
-complexity of $\Theta(wh)$.
+complexity of $\Theta(wh)$ and does not change the overall complexity.
+
+This algorithm is summarized in \Cref{alg:serial} and has a total time
+complexity of $\Theta(whDn)$ where $w \times h$ are the dimensions of the two
+input images, $2n + 1 \times 2n + 1$ is the size of the SAD window, and $D$ is
+the maximum disparity. With a sufficiently good implementation, a serial
+version of this algorithm can process low resolution video in real-time.
+However, achieving real-time processing at high resolutions or frame rates
+requires a parallel implementation.
 
 \section{Parallelization}
 \label{sec:parallel}
+Parallelizing the SAD-BM algorithm described in \Cref{sec:parallel} is
+challenging because of its several steps: (1) LoG filtering, (2) pre-computing
+integral images, (3) error minimization. At a minimum, each of these steps must
+be independently parallelized which requires a different technique for each
+stage. Even worse, dependencies between the steps must be minimized or
+worked-around to achieve optimal performance.
 
 \subsection{OpenMP}
 \label{sec:parallel-omp}
-This is a multi-step algorithm, where each step depends entirely on the output
-of the previous step (e.g. error processing cannot begin until after the LoG
-transformation is finished). This means that parallelizing each stage in the
-algorithm is equivalent to parallelizing the entire algorithm.
+Modifying the serial algorithm to multiple threads is as easy as adding a few
+OpenMP preprocessor directives. However, this comes at a steep cost: it is not
+possible to intelligently ``pipeline'' the steps of the algorithm to maximize
+CPU utilization. Even so, care must still be taken to avoid race conditions,
+minimize thread overhead, and maximizing memory locality to get good cache
+performance. In particular, achieving good cache performance requires careful
+consideration of which nested loops should parallelized. 
 
 First, consider the two-dimensional convolution required in the LoG
 transformation. Assuming all images are stored in row-major order, this can be
 done by assigning each thread a row, column, or single pixel. Given a
 sufficient number of cores, assigning each pixel a thread would be ideal.
 Unfortunately, modern CPUs have a small number of cores and the overhead of
-assigning one thread to each pixel would negate any performance gain from doing
-so. Instead, the rows of the image will be partitioned into groups of
-contiguous rows by OpenMP. This allows the number of threads to be tuned to
-match the CPU's number of cores and guarantees that each thread will
+creating this many threads would negate any performance gain from doing
+multi-threading. Instead, the rows of the image will be partitioned into groups
+of contiguous groups by OpenMP. This allows the number of threads to be tuned
+to match the CPU's number of cores and guarantees that each thread will
 sequentially accesses memory.
 
 Once the LoG transformation is complete, the next step is to compute integral
-images of the SAD error. Unlike with the LoG, this cannot be done by
-partitioning the data into rows: each row depends on all previous rows. One
-potential solution is to partition the data into columns. Unfortunately, this
-grossly inefficient because this splits sequential memory accesses across
-threads. This can be improved by spitting the calculation of integral images
-into two steps: first partition the image into rows to compute the horizontal
+images. Unlike with LoG, this cannot be done by partitioning the data into rows
+because each row depends on all previous rows. One potential solution is to
+partition the data into columns. Unfortunately, this splits sequential memory
+accesses across threads and would not perform well on systems with a small
+cache. This can be improved by spitting the calculation of integral images into
+two steps: first partition the image into rows to compute the horizontal
 component of the integral image, then sum along columns in parallel. This has
-the same complexity of computing the integral in one pass, but reduces the
+the same complexity of computing the integral in one pass, but minimizes the
 number of non-sequential memory accesses.
 
-Once the integral images have been computed, the disparity of each pixel can be
-independently computed and stored in the disparity map. For the same reason as
-with the LoG transform, the integral images were partitioned into rows for this
-calculation. Since each of these operations can be parallelized with no thread
-synchronization the resulting algorithm should linearly speedup with the number
-of threads until the number of threads exceeds the width or the height of the
-images. In practice, there will also be a small amount of constant overhead 
-while waiting for the threads to synchronize between steps of the algorithm.
+Once the integral images have been pre-computed, the disparity of each pixel
+can be independently computed and stored in the disparity map. For the same
+reason as with LoG, the integral images will be partitioned into rows for this
+calculation. Again, since each of these operations can be parallelized with no
+additional synchronization. Each of these steps should have a linear speedup,
+but the overall algorithm will still be subject to diminishing returns. This is
+because of the unavoidable, constant overhead in waiting for threads to
+synchronize between each step in the algorithm.
 
-\subsection{NVidia CUDA}
+\subsection{NVIDIA CUDA}
 \label{sec:parallel-cuda}
-Unlike OpenMP, in which threads are high overhead, NVidia's CUDA architecture
-allows for zero-overhead threads and SIMD instructions. However, this comes at
-a cost: memory transfers between the CPU and GPU are extremely costly and must
-be minimized to achieve respectable performance. Specifically, this means that
-the stereo pair is transferred to the GPU as a single unit, all processing
-should occur on the GPU, then the resulting disparity map is copied back to the
-CPU as a single operation.
+Unlike OpenMP's CPU threads, which are high overhead, parallelizing an
+algorithm on a GPGPU with NVIDIA's CUDA architecture allows for massive
+parallelism with zero-overhead threads and SIMD instructions.  However, this
+performance comes at a cost: memory transfers between the CPU and GPU are very
+slow and must be minimized at all costs ~\cite{cuda}. This means that the
+stereo pair is transferred to the GPU as a single unit, all processing should
+occur on the GPU, then the resulting disparity map is copied back to the CPU as
+a single operation. In addition, care must be taken when choosing block sizes
+to minimize the number of idle data paths in each CUDA core.
 
-Once the transfer is complete, the LoG is easy to compute: each pixel in the
-image is assigned a thread and all of the corresponding output pixels are
-computed in parallel. While this would be very inefficient on the CPU because
-of the overhead of traditional threads, this is ideal for the massively
-parallel architecture and zero-overhead threads available on the GPU. Even
-with assigning one pixel per thread, it still must be decided how to partition
-the threads into blocks. For optimal performance the number of threads per block
-must be a multiple of the warp size, $W$, however, this says nothing about how the
-threads should be partitioned into blocks. To minimize the number of memory
-accesses---the slowest operation---per block, this was done by partitioning the
-image into blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$.
+Once the stereo pair has been transferred to the GPU, LoG is very easy to
+parallelize : each pixel in the image is assigned a thread and the entire
+filtered image is generated in parallel. While this would be very inefficient
+on the CPU because of the overhead of traditional threads, this is ideal for
+the massively parallel architecture and zero-overhead threads available on the
+GPU. Even with assigning one pixel per thread, it is still necessary to
+partition the threads into blocks. For optimal performance the number of
+threads per block must be a multiple of the warp size ~\cite{cuda}, $W$, which
+is the number of SIMD data paths on each CUDA core. To minimize the number of
+memory accesses---the slowest operation---per block, this was done by
+partitioning the image into blocks of size $\floor{\sqrt{W}} \times
+\floor{\sqrt{W}}$. This guarantees that memory accesses overlap as much as possible within each block and that each block contains approximately $W$ threads.
 
-Once the LoG of the input images have been calculated, the next step is to
+Once the LoG of both input images have been calculated, the next step is to
 compute the integral images. This can be done using the same technique as
-described in \Cref{sec:omp}; by computing the horizontal SAD, then summing
-along columns in the resulting image. Computing the horizontal SAD can be done
-using square blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$ and the
-same partitioning scheme as described above. Summing the image vertically
-cannot use this partitioning because rows are inter-dependent. Since columns
-are independent, each column is assigned a thread and is grouped into a block
-of size $1 \times W$. This is non-ideal, but is the only way of eliminating
-inter-thread communication.
+described in \Cref{sec:omp}; i.e. by first computing the horizontal SAD, then
+summing along columns in the resulting image. Computing the horizontal SAD can
+be done using square blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$
+and the same partitioning scheme as described above. Summing the image
+vertically cannot use this partitioning because rows are inter-dependent. Since
+columns are independent, each column is assigned a thread and is grouped into a
+block of size $1 \times W$. While less parallel than the other operations, this
+is necessary to eliminate inter-thread communication.
 
 Finally, the integral images are reduced to a disparity map using the same
-algorithm as described in \Cref{sec:omp}. Just as with the LoG
-transformation, each pixel is assigned a thread and is assigned to a
-$\floor{\sqrt{W}} \times \floor{\sqrt{W}}$ block. Once the disparity image has
+algorithm as described in \Cref{sec:omp}. Just as with the LoG transformation,
+each pixel is assigned a thread and is assigned to a $\floor{\sqrt{W}} \times
+\floor{\sqrt{W}}$ block. Each pixel's thread finds the disparity that minimizes
+SAD error as computed from the integral images. Once the disparity image has
 been computed it either remains on the GPU for further CUDA-accelerated
 operations or, more likely, is copied back to the host for manipulation on the
 CPU.
