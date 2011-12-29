@@ -39,19 +39,37 @@
 
 \section{Introduction}
 \label{sec:intro}
-Stereo vision is the process of extracting depth information from two images of
-the same scene, known as a \textit{stereo pair}. Humans are able to
-unconsciously do this with our eyes, but mimicking this success using digital
-cameras is quite challenging and is frequently studied by computer vision
-researchers. At its heart, stereo vision is the problem of matching each point
-in the left image to a corresponding point in the right image. The distance
-between these two points is called their \textit{disparity} and is inversely
-proportional to the distance of that point from the camera. One class of
-algorithms for finding corresponding points are known as \textit{block
-matching} algorithms. Of these algorithms, this report considers one
-realization proposed by Konolige ~\ref{konolige97} because it is
-straightforward, runs in real-time, and an open-source implementation is
-available for comparison.
+Stereo vision is the process of extracting depth information from a
+\textit{stereo pair}, or two simultaneous images of a scene that are captured
+from different position. Humans unconsciously use stereo vision to perceive
+depth, but mimicking this success with a digital cameras and a computer is
+quite challenging and---as with many computer vision problems---all of the
+known algorithms are computationally intensive. At its heart, the stereo vision
+problem requires matching each pixel in the left image of a stereo pair to the
+corresponding pixel in the right image of the same pair. The distance between
+these two pixels is known as \textit{disparity} and is inversely proportional
+to the distance from the imaged point to the camera.
+
+Matching algorithms that solve this problem are special optimization algorithms
+that find the optimal pairing of pixels between the left and right images of a
+stereo pair for some definition of pairwise similarity. One of the most common
+matching algorithms, known as a \textit{block matching} algorithm, define
+similarity as a function of only a small rectangular window of pixels
+surrounding the candidate pair of pixels. This paper considers the \textit{sum
+of absolute difference block matching} (SAD-BM) algorithm proposed by
+Konolige~\cite{konolige97} which defines similarity as the sum of element-wise
+differences in intensity between blocks because of its relative simplicity,
+ability to run in real-time, and the availability of a open-source
+implementation to use as a benchmark.
+
+In \Autoref{sec:serial} the basic SAD-BM algorithm and a serial implementation
+will be described in detail. Next, the algorithm will be parallelized on the
+CPU using OpenMP (\Autoref{sec:parallel-omp}) and on the GPU using NVIDIA'S
+CUDA (\Autoref{sec:parallel-cuda}). The performance characteristics of each of
+these algorithms is evaluated in \Autoref{sec:perf} and compared against two
+highly optimized open source implementations of the same algorithm. Finally, in
+\Autoref{sec:future}, several potential performance improvements will be
+enumerated.
 
 \section{Serial Algorithm}
 \label{sec:serial}
