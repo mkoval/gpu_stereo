@@ -9,20 +9,6 @@
 \usepackage{subfig}
 \usepackage{cleveref}  % must be loaded last
 
-\let\orgautoref\autoref
-\providecommand{\Cref}
-        {\def\equationautorefname{Equation}%
-         \def\figureautorefname{Figure}%
-         \def\subfigureautorefname{Figure}%
-         \def\Itemautorefname{Item}%
-         \def\tableautorefname{Table}%
-         \def\sectionautorefname{Section}%
-         \def\subsectionautorefname{Section}%
-         \def\subsubsectionautorefname{Section}%
-         \def\chapterautorefname{Section}%
-         \def\partautorefname{Part}%
-         \orgautoref}
-
 \newcommand{\abs}[1]{\left|#1\right|}
 \newcommand{\proc}[1]{\textnormal{\scshape#1}}
 \newcommand{\norm}[1]{\left|\left|#1\right|\right|}
@@ -69,7 +55,7 @@ implementation to use as a benchmark.
 
 In \Cref{sec:serial} the basic SAD-BM algorithm and a serial implementation
 will be described in detail. Next, the algorithm will be parallelized on the
-CPU using OpenMP (\Cref{sec:parallel-omp}) and on the GPU using NVIDIA'S
+CPU using OpenMP (\Cref{sec:parallel-omp}) and on the GPU using Nvidia'S
 CUDA (\Cref{sec:parallel-cuda}). The performance characteristics of each of
 these algorithms is evaluated in \Cref{sec:perf} and compared against two
 highly optimized open source implementations of the same algorithm. Finally, in
@@ -219,11 +205,20 @@ requires a parallel implementation.
 \section{Parallelization}
 \label{sec:parallel}
 Parallelizing the SAD-BM algorithm described in \Cref{sec:serial} is
-challenging because of its several steps: (1) LoG filtering, (2) pre-computing
-integral images, (3) error minimization. At a minimum, each of these steps must
-be independently parallelized which requires a different technique for each
-stage. Even worse, dependencies between the steps must be minimized or
+challenging because of its several steps: (1) preprocessing, (2) integration, ,
+and (3) matching (see \Cref{fig:pipeline}). At a minimum, each of these steps
+must be independently parallelized which requires a different technique for
+each stage. Even worse, dependencies between the steps must be minimized or
 worked-around to achieve optimal performance.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{figures/pipeline}
+    \caption{
+        TODO
+    }
+    \label{fig:pipeline}
+\end{figure}
 
 \subsection{OpenMP}
 \label{sec:parallel-omp}
@@ -266,10 +261,10 @@ but the overall algorithm will still be subject to diminishing returns. This is
 because of the unavoidable, constant overhead in waiting for threads to
 synchronize between each step in the algorithm.
 
-\subsection{NVIDIA CUDA}
+\subsection{Nvidia CUDA}
 \label{sec:parallel-cuda}
 Unlike OpenMP's CPU threads, which are high overhead, parallelizing an
-algorithm on a GPGPU with NVIDIA's CUDA architecture allows for massive
+algorithm on a GPGPU with Nvidia's CUDA architecture allows for massive
 parallelism with zero-overhead threads and SIMD instructions.  However, this
 performance comes at a cost: memory transfers between the CPU and GPU are very
 slow and must be minimized at all costs ~\cite{cuda}. This means that the
@@ -386,7 +381,7 @@ performance difference is harder to attribute, but is most likely from
 intelligent use of CUDA streams and, similar to the CPU implementing, manual
 loop unrolling. Using streams allow for more operations to be executed in
 parallel, which is exceptionally important when working on powerful GPGPUs that
-have a large number of CUDA cores such as the NVIDIA Tesla C2070 used for
+have a large number of CUDA cores such as the Nvidia Tesla C2070 used for
 performance evaluation.
 
 \section{Conclusion}
