@@ -32,6 +32,7 @@
 \DeclareMathOperator*{\argmin}{argmax}
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator{\LoG}{\proc{LaplacianOfGaussian}}
+\DeclareMathOperator{\SAD}{SAD}
 \DeclareMathOperator{\Window}{Window}
 
 \title{Parallel Stereo Vision}
@@ -217,7 +218,7 @@ requires a parallel implementation.
 
 \section{Parallelization}
 \label{sec:parallel}
-Parallelizing the SAD-BM algorithm described in \Cref{sec:parallel} is
+Parallelizing the SAD-BM algorithm described in \Cref{sec:serial} is
 challenging because of its several steps: (1) LoG filtering, (2) pre-computing
 integral images, (3) error minimization. At a minimum, each of these steps must
 be independently parallelized which requires a different technique for each
@@ -302,7 +303,7 @@ block of size $1 \times W$. While less parallel than the other operations, this
 is necessary to eliminate inter-thread communication.
 
 Finally, the integral images are reduced to a disparity map using the same
-algorithm as described in \Cref{sec:omp}. Just as with the LoG transformation,
+algorithm as described in \Cref{sec:parallel-omp}. Just as with the LoG transformation,
 each pixel is assigned a thread and is assigned to a $\floor{\sqrt{W}} \times
 \floor{\sqrt{W}}$ block. Each pixel's thread finds the disparity that minimizes
 SAD error as computed from the integral images. Once the disparity image has
@@ -319,10 +320,11 @@ implementations of the algorithms could be evaluated. Each of these algorithms
 was evaluated on the 2003 Middlebury stereo dataset and the results were
 compared with ground truth to verify that each implementation was producing
 valid output. Since the runtime of the algorithm is deterministic in the size
-and bitdepth of the image, the \textit{cones} was arbitrary selected. The
-parameters of the SAD-BM algorithm were set to $D = 64$ and $n = 21$, values
-that are typical when the algorithm is used in real-time. The results of this
-performance evaluation are shown in \Cref{fig:perf}
+and bitdepth of the image it is only necessary to evaluate the algorithm on one
+image and the \textit{cones} stereo pair from the
+Middlebury~\cite{scharstein2003} dataset was arbitrary selected. The parameters
+of SAD-BM were set to $D = 64$ and $n = 21$, values that are typical when the
+tuned for real-time usage.
 
 \begin{figure}
     \centering
@@ -337,17 +339,18 @@ performance evaluation are shown in \Cref{fig:perf}
     \label{fig:perf-omp}
 \end{figure}
 
-As \Cref{fig:perf-omp} shows, parallelizing SAD-BM with OpenMP performs as
-was predicted in \Cref{sec:parallel-omp}; performance increases subject to
-until the number of threads exceeds the number of CPU cores, at which point
-performance decreases due to the overhead of additional threads. While the
-parallel performance increase is impressive, it still suffers from diminishing
-returns. This is consistent with Amdahl's law, which says that the maximum
-speedup of an algorithm is limited by the sections of the algorithm that cannot
-be serialized. In this case, much of that overhead is caused by splitting the
-algorithm into several smaller stages and could be improved by pipelining the
-calculating so the stages can run in parallel (see \Cref{sec:future} for
-details).
+As \Cref{fig:perf-omp} shows, parallelizing SAD-BM with OpenMP performs as was
+predicted in \Cref{sec:parallel-omp}: performance increases with the number of
+threads until the number of threads exceeds the number of CPU cores. At this
+point, performance slightly decreases due to the overhead of additional
+threads.  While the parallel performance increase is impressive, it still
+suffers from diminishing returns consistent with Amdahl's law, which states
+that the maximum speedup of an algorithm is limited by the sections of the
+algorithm that cannot be serialized. In this case, much of that overhead is
+caused by splitting the algorithm into several smaller stages and could be
+improved by pipelining the calculating so the stages can run in
+parallel---something that is not possible with OpenMP (see \Cref{sec:future}
+for details).
 
 \begin{figure}
     \centering
@@ -355,80 +358,85 @@ details).
     \caption{
         Comparison between algorithms described in this report and the open
         source implementations in OpenCV. Note that the GPU accelerated
-        algorithms outperform the CPU algorithms and the OpenCV implementations
-        outperform the custom implementations in all cases.
+        algorithms outperform their respective CPU algorithms and the OpenCV
+        outperforms both of the custom implementations.
     }
     \label{fig:perf-comp}
 \end{figure}
 
 Overall, the OpenMP parallelization gave a large performance increase without
-any additional complexity: parallelizing the serial algorithm with OpenMP
-simply required adding three preprocessor directives! Despite this boost in
+adding any complexity: parallelizing the serial algorithm with OpenMP only
+required adding three preprocessor directives! Despite this boost in
 performance, this algorithm runs 6.15 times slower than the OpenCV
-implementation (\Cref{fig:perf-comp}). The impressive performance of OpenCV
-is attributed to three factors: (1) utilizing architecture-specific
-instructions, (2) managing threads at a lower level, and (3) hand optimization.
-In particular, the OpenCV implementation of SAD-BM makes heavy use of Streaming
-SIMD Extensions (SSE2) to perform multiple arithmetic operations in each clock
+implementation (\Cref{fig:perf-comp}). The impressive performance of OpenCV can
+be attributed to three factors: (1) utilizing architecture-specific
+instructions, (2) managing threads at a lower level, and (3) hand optimization
+of inner loops.  In particular, OpenCV SAD-BM makes heavy use of Streaming SIMD
+Extensions (SSE2) to perform multiple arithmetic operations in each clock
 cycle. Combined with manually-controlled thread synchronization using Intel's
-Thread Building Blocks (TBB) and manual loop unrolling, this easily accounts
-for the performance difference.
+Thread Building Blocks (TBB) and loop unrolling, this easily accounts for the
+performance difference.
 
 Also as expected, the CUDA-accelerated SAD-BM algorithm is 2.71 times faster
-than the OpenMP parallelized CPU algorithm. This is surprisingly poor
-performance because the SAD-BM algorithm---like many computer vision
-algorithms---is particularly well-suited for massive parallelism. This speedup
-is lower than, but comparable to, OpenCV's the 7.37 times performance
-difference between the CPU and GPU algorithms. This performance difference is
-harder to attribute, but is most likely from intelligent use of CUDA streams
-and manually unrolling loops. Using streams allow for more operations to be
-executed in parallel, which is exceptionally important when working on powerful
-GPGPUs like the NVidia Tesla in the machine used for evaluation.
+than the OpenMP parallelized CPU algorithm. This is because the SAD-BM
+algorithm---like many computer vision algorithms---is particularly well-suited
+for massive parallelism. This speedup is lower than, but comparable to,
+OpenCV's 7.37 times performance increase from the CPU and GPU algorithms. This
+performance difference is harder to attribute, but is most likely from
+intelligent use of CUDA streams and, similar to the CPU implementing, manual
+loop unrolling. Using streams allow for more operations to be executed in
+parallel, which is exceptionally important when working on powerful GPGPUs that
+have a large number of CUDA cores such as the NVIDIA Tesla C2070 used for
+performance evaluation.
 
 \section{Conclusion}
 \label{sec:conc}
-Overall, the results (\Cref{fig:perf-comp}) show that parallelizing the
-SAD-BM algorithm can significantly improve performance. Using CPU threads on a
-multi-core processor yields a considerable speedup without requiring any
-expensive hardware and very minimal changes to the serial algorithm. Indeed,
-running the OpenMP-parallelized algorithm with one thread is exactly equivalent
-to running the serial algorithm. Note, however, that this implementation is
-heavily affected by the number of CPU cores. While the performance is excellent
-on a 24-core machine, it will likely be disappointing on more common dual or
-quad core machines. This is in contrast to the CUDA implementation, which
-necessitated reimplementing the entire algorithm from scratch.
+Overall, the results (\Cref{fig:perf-comp}) show that parallelizing the SAD-BM
+algorithm significantly improves performance. Using CPU threads on a multi-core
+processor yields a considerable speedup without requiring expensive, additional
+hardware or major changes to the serial algorithm. Indeed, running the
+OpenMP-parallelized algorithm with one thread is exactly identical to running
+the serial algorithm! Note, however, that this implementation is heavily
+affected by the number of available CPU cores. While the performance is
+excellent on a 24-core machine (such as that used for evaluation), it will
+likely be disappointing on more common dual or quad core machines.
 
-If a high end GPGPU is available and performance is critical, then GPU
-acceleration cannot be matched. Both of the CUDA-accelerated implementations
-outperformed their corresponding multi-threaded CPU implementations. This is
-especially important when the CPU is under heavy load because offloading
-computations to the GPU frees up additional CPU time for other tasks. One
-example of this is on a robot that much simultaneously perceive obstacles with
-stereo vision and plan paths around the observed obstacles. Even if the CPU was
-fast enough to run the SAD-BM algorithm in real-time, doing the calculations on
-the GPU would allow more CPU time to be spent on path planning.
+The ease of parallelizing SAD-BM with OpenMP is in contrast to the difficultly
+in parallelizing the same algorithm with CUDA. Implementing the algorithm as a
+collection of CUDA kernels required completely rewriting the serial algorithm
+and carefully selecting optimal block sizes. The performance payoff, however,
+is clear; if a high end GPGPU is available and performance is critical, then
+GPU acceleration cannot be matched. Both of the CUDA-accelerated
+implementations outperformed their corresponding multi-threaded CPU
+implementations. This is especially important when the CPU is under heavy load
+because any calculations done on the GPU free additional CPU time for other
+tasks. One example of this would be for a mobile robot to offload stereo vision
+calculations to its GPU while the CPU is responsible for path planning, a task
+that does not lend itself to massive parallelism.
 
 \section{Future Work}
 \label{sec:future}
-From the comparison with OpenCV, there are obviously improvements that can be
-made in this implementation. On the CPU this would involve: (1) using SSE2 to
-perform multiple arithmetic calculations per clock cycle, (2) manually unroll
-tight loops to reduce overhead, and (3) switching to a lower-level threading
-library to reduce the amount of synchronization. On more modern processors, the
-SSE4.1 SIMD instructions for SAD calculation could be used to even greater
-effect by allowing an $8 \times 8$ SAD window to calculated in seven clock
-cycles. These instructions are not used in OpenCV, so this is a potential
-method of surpassing OpenCV's performance.
+From the comparison with OpenCV, there are obviously improvements that would
+improve the performance of both of the custom implementations. On the CPU this
+would involve: (1) using SSE2 to perform multiple arithmetic calculations per
+clock cycle, (2) manually unroll tight loops to reduce overhead, and (3)
+switching to a lower-level threading library to reduce the amount of
+synchronization. On modern processors, the SSE4.1 SIMD instructions for SAD
+calculation could be used to even greater effect by allowing an $8 \times 8$
+SAD window to calculated in less than eight clock cycles. These instructions
+are not used in OpenCV, so this is a potential performance increase that could
+surpass OpenCV's current speed.
 
 Optimizations are less obvious on the GPU. Most importantly, the code should be
 modified to use CUDA streams to pipeline operations and minimize the number of
-synchronizing points. Another major optimization would be to replace some
-custom code, such as the LoG convolution, with NVidia Performance Primitives
-(NPP) that are already highly optimized. At a lower level, performance could be
-improved by padding images to be a multiple of the block size and manually
-unrolling loops to minimize bounds checking in the kernels. Together, these
-improvements would close the gap between this implementation of SAD-BM and the
-highly optimized open source implementation in OpenCV.
+synchronization points. Another major optimization would be to replace some
+custom code, such as the LoG convolution, with algorithms from \textit{NVidia
+Performance Primitives} (NPP), a highly optimized library of common algorithms.
+At a lower level, performance could be improved by padding images to be a
+multiple of the block size and manually unrolling loops to minimize bounds
+checking in the kernels. Together, these improvements would close the gap
+between the performance of these custom implementations of SAD-BM and the
+highly optimized, open source implementations in OpenCV.
 
 \bibliography{report}{}
 \bibliographystyle{plain}
