@@ -7,9 +7,10 @@
 \usepackage{import}
 \usepackage{microtype} % better typesetting
 \usepackage{subfig}
+\usepackage{cleveref}  % must be loaded last
 
 \let\orgautoref\autoref
-\providecommand{\Autoref}
+\providecommand{\Cref}
         {\def\equationautorefname{Equation}%
          \def\figureautorefname{Figure}%
          \def\subfigureautorefname{Figure}%
@@ -65,13 +66,13 @@ differences in intensity between blocks because of its relative simplicity,
 ability to run in real-time, and the availability of a open-source
 implementation to use as a benchmark.
 
-In \Autoref{sec:serial} the basic SAD-BM algorithm and a serial implementation
+In \Cref{sec:serial} the basic SAD-BM algorithm and a serial implementation
 will be described in detail. Next, the algorithm will be parallelized on the
-CPU using OpenMP (\Autoref{sec:parallel-omp}) and on the GPU using NVIDIA'S
-CUDA (\Autoref{sec:parallel-cuda}). The performance characteristics of each of
-these algorithms is evaluated in \Autoref{sec:perf} and compared against two
+CPU using OpenMP (\Cref{sec:parallel-omp}) and on the GPU using NVIDIA'S
+CUDA (\Cref{sec:parallel-cuda}). The performance characteristics of each of
+these algorithms is evaluated in \Cref{sec:perf} and compared against two
 highly optimized open source implementations of the same algorithm. Finally, in
-\Autoref{sec:future}, several potential performance improvements will be
+\Cref{sec:future}, several potential performance improvements will be
 enumerated.
 
 \section{Serial Algorithm}
@@ -103,6 +104,28 @@ lines are row-aligned.}. This preprocessing is is possible in $\Theta(wh)$
 operations and reduces the number of window comparisons to $\Theta(whD)$; a
 linear performance increase.
 
+\begin{figure}
+    \centering
+    \subfloat[Input Image]{
+        \includegraphics[width=0.33\textwidth]{figures/raw}
+        \label{fig:images-raw}
+    }
+    \subfloat[LoG Transformation]{
+        \includegraphics[width=0.33\textwidth]{figures/log}
+        \label{fig:images-raw}
+    }
+    \subfloat[Disparity Map]{
+        \includegraphics[width=0.33\textwidth]{figures/disparity}
+        \label{fig:images-disp}
+    }
+    \caption{
+        Left input image, output of the LoG transform, and the final disparity
+        map after post-processing~\cite{konolige97}. This image is part of the
+        Middlebury stereo dataset~\cite{scharstein2003}.
+    }
+    \label{fig:images}
+\end{figure}
+
 Rectification greatly reduces the number of pairwise comparisons that is
 necessary and is a large performance boost, but na\"{i}vely calculating the SAD
 between two windows still requires $\Theta(n^2)$ subtractions for a total
@@ -121,23 +144,47 @@ defined as
         + \sum_{\Delta x = -n}^n
           \abs{I_l[x - \Delta x, y] - I_r[x - d - \Delta x, y]},
 \end{align*}
-where $I_{sad}^{(d)}[x, y] = 0$ for $y = -1$ as a base case. This is simple to
-calculate and has a time complexity of $\Theta(w h n)$. Using the technique
-described above, this reduces the overall complexity of the algorithm to
-$\Theta(whDn)$.
+where $I_{sad}^{(d)}[x, -1] = 0$ is the base case. This is simple to calculate
+and has a time complexity of $\Theta(w h n)$. Using the technique described
+above, this reduces the overall complexity of the algorithm to $\Theta(whDn)$.
+
+\begin{algorithm}[t]
+    \KwIn {$I_l, I_r \in \mathbb{R}^{w \times h}$: rectified stereo pair}
+    \KwIn {$n \in \mathbb{Z}$: half the width and height of the SAD window}
+    \KwIn {$D \in \mathbb{N}_w$: maximum disparity}
+    \KwOut {$I_{disp} \in \mathbb{N}_d^{w \times h}$: disparity map}
+    $I_l^{(log)} \gets \LoG(I_l)$ \;
+    $I_r^{(log)} \gets \LoG(I_r)$ \;
+    %\STATE \COMMENT {compute vertical integral images of error}
+    \For {$d = 1 \to D$} {
+        \ForEach {$(x_0, y_0) \in \mathbb{N}_w \times \mathbb{N}_h$} {
+            $E_y^{(d)} \gets \sum_{\Delta x = -n}^n \left(
+                          I_l^{(log)}[x_0 - \Delta x, y_0]
+                          - I_r^{(log)}[x_0 - \Delta x - d, y_0] \right)$ \;
+            $I_{sad}^{(d)}[x, y] \gets E_y + I_{sad}^{(d)}[x, y - 1]$ \;
+        }
+    }
+    %\STATE \COMMENT {choose the disparity for each pixel that minimizes error}
+    \ForEach {$(x, y) \in \mathbb{N}_w \times \mathbb{N}_h$} {
+        $I_{disp}[x, y] \gets \argmin_{d \le D} I_{sad}^{(d)}[x, y + n] - I_{sad}^{(d)}[x, y - n]$ \;
+    }
+    \Return {$I_{disp}$}
+    \caption{Sum of Absolute Difference Block Matching (SAD-BM)}
+    \label{alg:serial}
+\end{algorithm}
 
 While efficient, implementing the algorithm as described above would yield poor
 disparity map simply because there is not enough texture in most images to
 differentiate meaningful differences from noise. As in Konolige's
 implementation ~\cite{konolige97}, this is solved by preprocessing the stereo
 pair with the Laplacian of a Gaussian filter. The \textit{Laplacian of a
-Gaussian} (LoG) is a convolution that is the discrete approximation of the
+Gaussian} (LoG) is a convolution filter is a discrete approximation of the
 composition of a Gaussian filter with the two-dimensional
 Laplacian\footnote{The Laplacian is the sum of unmixed second-order partial
 derivatives.}. This acts as a high pass filter that is robust to high-frequency
 noise and ``amplifies'' texture. As can be seen in the difference between
-\Autoref{fig:images-raw} and \Autoref{fig:images-disp}, LoG responds strongly
-to edges and weakly to regions of constant color.
+\Cref{fig:images-raw,fig:images-disp}, LoG responds strongly to edges and
+weakly to regions of constant color.
 
 As LoG is a convolution filter it can be evaluated as a convolution in the time
 domain or as multiplication in the frequency domain after taking the
@@ -147,78 +194,9 @@ performs poorly on small images. Therefore---as is typical in image
 processing---the convolution will be directly evaluated using a ``sliding
 window'' algorithm. This algorithm has a time complexity of $\Theta(whk^2)$
 where $k$ is the width and height of the kernel. Because $k$ is constant
-parameter\footnote{Typically $k$ is on the order of nine due because of limits
-in the discretization of the LoG function.}, this preprocessing step actually
-has a time complexity of $\Theta(wh)$.
-
-
-
-
-
-\begin{figure}
-    \centering
-    \subfloat[Input Image]{
-        \includegraphics[width=0.33\textwidth]{figures/raw}
-        \label{fig:images-raw}
-    }
-    \subfloat[LoG Transformation]{
-        \includegraphics[width=0.33\textwidth]{figures/log}
-        \label{fig:images-raw}
-    }
-    \subfloat[Disparity Map]{
-        \includegraphics[width=0.33\textwidth]{figures/disparity}
-        \label{fig:images-disp}
-    }
-    \caption{
-        % TODO
-    }
-    \label{fig:images}
-\end{figure}
-
-This algorithm minimizes the number of pairwise pixel comparisons, but says
-nothing of the efficiency of $n \times n$ block comparison. Comparing a pair of
-these blocks requires $\Theta(n^2)$ operations and, if all pairs are
-independent, the total time complexity is $\Theta(w h D n^2)$. This can be
-decreased by using additional memory and calculating a separate vertical
-integral images of the SAD error for every possible disparity. Formally, eaach
-vertical \textit{integral image} of error is
-\begin{align*}
-    I_{integral}^{(d)}[x, y] = \sum_{y' = 0}^y I^{(d)}[x, y],
-\end{align*}
-where $I^{(d)}$ is an image that contains the horizontal SAD error for each
-pixel at disparity $d$. Computing each of the $d$ vertical integral images has
-time complexity $\Theta(w h n)$. Given the integral images, the error in an $n
-\times n$ window can be calculated in constant time. Therefore, the total time
-complexity of the algorithm is $\Theta(w h d n)$ with $\Omega(w h)$ memory
-overhead\footnote{This assumes that each disparity is calculated in series so
-only one integral image is in memory at a given time.}
-
-\begin{algorithm}
-    \KwIn {$I_{left}, I_{right} \in \mathbb{R}^{w \times h}$: rectified stereo pair}
-    \KwIn {$n \in \mathbb{Z}$: width and height of SAD windows}
-    \KwIn {$D \in \mathbb{N}_w$: maximum disparity}
-    \KwOut {$I_{disp} \in \mathbb{N}_d^{w \times h}$: disparity map}
-    $I_{left}^{(log)} \gets \LoG(I_{left})$   \;
-    $I_{right}^{(log)} \gets \LoG(I_{right})$ \;
-    %\STATE \COMMENT {compute vertical integral images of error}
-    \For {$d = 1 \to D$} {
-        \ForEach {$(x_0, y_0) \in \mathbb{N}_w \times \mathbb{N}_h$} {
-            $E_y^{(d)} \gets \sum_{\Delta x = -n/2}^{n/2} \left(
-                          I_{left}^{(log)}[x_0 - \Delta x, y_0]
-                          - I_{right}^{(log)}[x_0 - \Delta x - d, y_0] \right)$ \;
-            $I_{sad}^{(d)}[x, y] \gets E_y + I_{sad}^{(d)}[x, y - 1]$ \;
-        }
-    }
-    %\STATE \COMMENT {choose the disparity for each pixel that minimizes error}
-    \ForEach {$(x_0, y_0) \in \mathbb{N}_w \times \mathbb{N}_h$} {
-        $I_{disp}[x, y] \gets \argmin_{d \le D} I_{sad}^{(d)}[x, y + n/2] - I_{sad}^{(d)}[x, y - n/2]$ \;
-    }
-    \Return {$I_{disp}$}
-    \caption{
-        TODO
-    }
-    \label{alg:serial}
-\end{algorithm}
+parameter\footnote{Typically $k$ is small because of precision limits when
+discretizing the LoG function.}, this preprocessing step actually has a time
+complexity of $\Theta(wh)$.
 
 \section{Parallelization}
 \label{sec:parallel}
@@ -285,7 +263,7 @@ image into blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$.
 
 Once the LoG of the input images have been calculated, the next step is to
 compute the integral images. This can be done using the same technique as
-described in \Autoref{sec:omp}; by computing the horizontal SAD, then summing
+described in \Cref{sec:omp}; by computing the horizontal SAD, then summing
 along columns in the resulting image. Computing the horizontal SAD can be done
 using square blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$ and the
 same partitioning scheme as described above. Summing the image vertically
@@ -295,7 +273,7 @@ of size $1 \times W$. This is non-ideal, but is the only way of eliminating
 inter-thread communication.
 
 Finally, the integral images are reduced to a disparity map using the same
-algorithm as described in \Autoref{sec:omp}. Just as with the LoG
+algorithm as described in \Cref{sec:omp}. Just as with the LoG
 transformation, each pixel is assigned a thread and is assigned to a
 $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$ block. Once the disparity image has
 been computed it either remains on the GPU for further CUDA-accelerated
@@ -314,7 +292,7 @@ valid output. Since the runtime of the algorithm is deterministic in the size
 and bitdepth of the image, the \textit{cones} was arbitrary selected. The
 parameters of the SAD-BM algorithm were set to $D = 64$ and $n = 21$, values
 that are typical when the algorithm is used in real-time. The results of this
-performance evaluation are shown in \Autoref{fig:perf}
+performance evaluation are shown in \Cref{fig:perf}
 
 \begin{figure}
     \centering
@@ -329,8 +307,8 @@ performance evaluation are shown in \Autoref{fig:perf}
     \label{fig:perf-omp}
 \end{figure}
 
-As \Autoref{fig:perf-omp} shows, parallelizing SAD-BM with OpenMP performs as
-was predicted in \Autoref{sec:parallel-omp}; performance increases subject to
+As \Cref{fig:perf-omp} shows, parallelizing SAD-BM with OpenMP performs as
+was predicted in \Cref{sec:parallel-omp}; performance increases subject to
 until the number of threads exceeds the number of CPU cores, at which point
 performance decreases due to the overhead of additional threads. While the
 parallel performance increase is impressive, it still suffers from diminishing
@@ -338,7 +316,7 @@ returns. This is consistent with Amdahl's law, which says that the maximum
 speedup of an algorithm is limited by the sections of the algorithm that cannot
 be serialized. In this case, much of that overhead is caused by splitting the
 algorithm into several smaller stages and could be improved by pipelining the
-calculating so the stages can run in parallel (see \Autoref{sec:future} for
+calculating so the stages can run in parallel (see \Cref{sec:future} for
 details).
 
 \begin{figure}
@@ -357,7 +335,7 @@ Overall, the OpenMP parallelization gave a large performance increase without
 any additional complexity: parallelizing the serial algorithm with OpenMP
 simply required adding three preprocessor directives! Despite this boost in
 performance, this algorithm runs 6.15 times slower than the OpenCV
-implementation (\Autoref{fig:perf-comp}). The impressive performance of OpenCV
+implementation (\Cref{fig:perf-comp}). The impressive performance of OpenCV
 is attributed to three factors: (1) utilizing architecture-specific
 instructions, (2) managing threads at a lower level, and (3) hand optimization.
 In particular, the OpenCV implementation of SAD-BM makes heavy use of Streaming
@@ -379,7 +357,7 @@ GPGPUs like the NVidia Tesla in the machine used for evaluation.
 
 \section{Conclusion}
 \label{sec:conc}
-Overall, the results (\Autoref{fig:perf-comp}) show that parallelizing the
+Overall, the results (\Cref{fig:perf-comp}) show that parallelizing the
 SAD-BM algorithm can significantly improve performance. Using CPU threads on a
 multi-core processor yields a considerable speedup without requiring any
 expensive hardware and very minimal changes to the serial algorithm. Indeed,
