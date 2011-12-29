@@ -22,13 +22,16 @@
          \def\partautorefname{Part}%
          \orgautoref}
 
+\newcommand{\abs}[1]{\left|#1\right|}
 \newcommand{\proc}[1]{\textnormal{\scshape#1}}
+\newcommand{\norm}[1]{\left|\left|#1\right|\right|}
+\newcommand{\floor}[1]{\lfloor#1\rfloor}
+\newcommand{\ceil}[1]{\lceil#1\rceil}
 
 \DeclareMathOperator*{\argmin}{argmax}
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator{\LoG}{\proc{LaplacianOfGaussian}}
 \DeclareMathOperator{\Window}{Window}
-\newcommand{\floor}[1]{\lfloor #1 \rfloor}
 
 \title{Parallel Stereo Vision}
 \author{Michael Koval}
@@ -73,46 +76,98 @@ enumerated.
 
 \section{Serial Algorithm}
 \label{sec:serial}
-For each pixel in the left image, $p_l$, a stereo matching algorithm attempts
-to find $p_r$, the corresponding pixel in the right image such as that $p_l$
-and $p_r$ are ``most similar''. In the case of SAD-BM and other block matching
-algorithms, the similarity between $p_l$ and $p_r$ is assumed to be the
-similarity between the pixels inside the $n \times n$ window centered at $p_l$
-and $p_r$. In the case of the Konolige's algorithm ~\ref{konolige97}, the
-similarity of two windows is defined as the \textit{sum of absolute
-differences} (SAD) or L1-norm of the difference of the two windows, i.e.
+The SAD-BM algorithm considers pairs each pixel in the left image, $p_l$, with
+the pixel in the right image, $p_r$, that minimizes the sum of absolute
+difference between the $n \times n$ windows surrounding the pixels in the pair.
+If $I_l$ and $I_r$ are the left and right images, this can be mathematically
+expressed as
 \begin{align*}
-    p_r = \argmax_p \left|\left|\Window_{m \times n}(I_{left}, p_l)
-          - \Window_{m \times n}(I_{right}, p_r)\right|\right|_1
+    p_r &= \argmin_{(x_r, y_r)}
+             \sum_{\Delta x = -n}^n \sum_{\Delta y = -n}^n \abs{
+                 I_l[x_l + \Delta x, y_l + \Delta y]
+               - I_r[x_r + \Delta x, y_r + \Delta y]
+           }
 \end{align*}
-where $\Window_{m \times n}(I, p)$ is the $m \times n$ rectangle of pixels
-centered at point $p$ in image $I$.
+where $n$ is a parameter of the SAD-BM algorithm. This definition clearly shows
+why this algorithm is named ``sum of absolute difference,'' but does not give
+any insight into how to efficiently find such pairings.
 
-Implemented na\"{i}vely, this would be quite inefficient because the algorithm
-must exhaustively check every pair of pixels in the left and right images. On a
-stereo pair of dimensions $w \times h$, this would require $\Theta(w^2 h^2)$
-window comparisons. Using \textit{epipolar geometry}, the geometry of stereo
-vision, it is possible to reduce the size of research space by eliminating
-corresponding pairs of points that are geometrically impossible\footnote{Any
-pair of points that violate the epipolar constraint need not be considered.}.
-This theoretical result can be applied to a calibrated camera to
-\textit{rectify} the stereo pair and force corresponding points to appear in
-the same row in both images\footnote{In terms of epipolar geometric,
-rectification is a transformation that forces the epipolar lines to be
-row-aligned.} Using a rectified stereo pair, the number of comparisons is
-reduced to $\Theta(w h d)$ where $D$ is the maximum possible disparity. As
-$D \le w$, this is at least a linear speedup over the na\"{i}ve algorithm.
+Indeed, even if the maximum disparity is known to be less than $D$, this
+algorithm requires $\Theta(whD^2)$ SAD comparisons, which is quartic in
+resolution under real-world conditions\footnote{Assuming the aspect ratio,
+field of view, and baseline are fixed.}. Calibrating the cameras allows for the
+input images to be \textit{rectified}, a transformation that forces
+corresponding points to have the same vertical coordinate in both images of a
+stereo pair\footnote{Rectification rotates the images such that the epipolar
+lines are row-aligned.}. This preprocessing is is possible in $\Theta(wh)$
+operations and reduces the number of window comparisons to $\Theta(whD)$; a
+linear performance increase.
+
+Rectification greatly reduces the number of pairwise comparisons that is
+necessary and is a large performance boost, but na\"{i}vely calculating the SAD
+between two windows still requires $\Theta(n^2)$ subtractions for a total
+complexity of $\Theta(whDn^2)$. This performance can also be improved by
+preprocessing the input images to generate one SAD integral image per possible
+disparity. In general, the value of a pixel in an \textit{integral image} is
+the sum of all pixels to the top-left of that pixel, inclusive. Given an
+integral image, the area of an arbitrary rectangular region in the original can
+be found in a constant number of operations. In this case, the integral is
+computed from the horizontal components SAD errors shifted by the current
+disparity. Assuming the disparity is $d$, the SAD integral image is recursively
+defined as
+\begin{align*}
+    I_{sad}^{(d)}[x, y] =
+        I_{sad}^{(d)}[x, y - 1]
+        + \sum_{\Delta x = -n}^n
+          \abs{I_l[x - \Delta x, y] - I_r[x - d - \Delta x, y]},
+\end{align*}
+where $I_{sad}^{(d)}[x, y] = 0$ for $y = -1$ as a base case. This is simple to
+calculate and has a time complexity of $\Theta(w h n)$. Using the technique
+described above, this reduces the overall complexity of the algorithm to
+$\Theta(whDn)$.
+
+While efficient, implementing the algorithm as described above would yield poor
+disparity map simply because there is not enough texture in most images to
+differentiate meaningful differences from noise. As in Konolige's
+implementation ~\cite{konolige97}, this is solved by preprocessing the stereo
+pair with the Laplacian of a Gaussian filter. The \textit{Laplacian of a
+Gaussian} (LoG) is a convolution that is the discrete approximation of the
+composition of a Gaussian filter with the two-dimensional
+Laplacian\footnote{The Laplacian is the sum of unmixed second-order partial
+derivatives.}. This acts as a high pass filter that is robust to high-frequency
+noise and ``amplifies'' texture. As can be seen in the difference between
+\Autoref{fig:images-raw} and \Autoref{fig:images-disp}, LoG responds strongly
+to edges and weakly to regions of constant color.
+
+As LoG is a convolution filter it can be evaluated as a convolution in the time
+domain or as multiplication in the frequency domain after taking the
+discrete-time Fourier transform of the source images. While performing the
+calculation in the frequency domain has better asymptotic complexity, it
+performs poorly on small images. Therefore---as is typical in image
+processing---the convolution will be directly evaluated using a ``sliding
+window'' algorithm. This algorithm has a time complexity of $\Theta(whk^2)$
+where $k$ is the width and height of the kernel. Because $k$ is constant
+parameter\footnote{Typically $k$ is on the order of nine due because of limits
+in the discretization of the LoG function.}, this preprocessing step actually
+has a time complexity of $\Theta(wh)$.
+
+
+
+
 
 \begin{figure}
     \centering
     \subfloat[Input Image]{
         \includegraphics[width=0.33\textwidth]{figures/raw}
+        \label{fig:images-raw}
     }
     \subfloat[LoG Transformation]{
         \includegraphics[width=0.33\textwidth]{figures/log}
+        \label{fig:images-raw}
     }
     \subfloat[Disparity Map]{
         \includegraphics[width=0.33\textwidth]{figures/disparity}
+        \label{fig:images-disp}
     }
     \caption{
         % TODO

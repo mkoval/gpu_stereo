@@ -4,3 +4,5 @@ figures/*.tex
 *.log
 *.out
 *.pdf
+*.bbl
+*.blg
