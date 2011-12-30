@@ -31,36 +31,36 @@
 \section{Introduction}
 \label{sec:intro}
 Stereo vision is the process of extracting depth information from a
-\textit{stereo pair}, or two simultaneous images of a scene that are captured
-from different position. Humans unconsciously use stereo vision to perceive
+\textit{stereo pair}, two images of a scene that are simultaneously captured
+from different positions. Humans unconsciously use stereo vision to perceive
 depth, but mimicking this success with a digital cameras and a computer is
-quite challenging and---as with many computer vision problems---all of the
-known algorithms are computationally intensive. At its heart, the stereo vision
-problem requires matching each pixel in the left image of a stereo pair to the
-corresponding pixel in the right image of the same pair. The distance between
-these two pixels is known as \textit{disparity} and is inversely proportional
-to the distance from the imaged point to the camera.
+quite challenging and---as with many computer vision problems---computationally
+intensive. At its heart, the stereo vision problem requires matching each pixel
+in the left image of a stereo pair to the corresponding pixel in the right
+image of the same pair. The distance between these two pixels is known as
+\textit{disparity} and is inversely proportional to the distance from the point
+to the camera in three-dimensional space.
 
 Matching algorithms that solve this problem are special optimization algorithms
 that find the optimal pairing of pixels between the left and right images of a
-stereo pair for some definition of pairwise similarity. One of the most common
-matching algorithms, known as a \textit{block matching} algorithm, define
-similarity as a function of only a small rectangular window of pixels
+stereo pair by minimizing some definition of pairwise similarity. One of the
+most common matching algorithms, known as a \textit{block matching} algorithm,
+define similarity as a function of only a small rectangular window of pixels
 surrounding the candidate pair of pixels. This paper considers the \textit{sum
 of absolute difference block matching} (SAD-BM) algorithm proposed by
 Konolige~\cite{konolige97} which defines similarity as the sum of element-wise
-differences in intensity between blocks because of its relative simplicity,
-ability to run in real-time, and the availability of a open-source
-implementation to use as a benchmark.
+differences in intensity between blocks. This algorithm was selected because of
+its relative simplicity, ability to run in real-time, and the availability of a
+open-source implementations to use as a benchmark.
 
-In \Cref{sec:serial} the basic SAD-BM algorithm and a serial implementation
-will be described in detail. Next, the algorithm will be parallelized on the
-CPU using OpenMP (\Cref{sec:parallel-omp}) and on the GPU using Nvidia'S
-CUDA (\Cref{sec:parallel-cuda}). The performance characteristics of each of
-these algorithms is evaluated in \Cref{sec:perf} and compared against two
-highly optimized open source implementations of the same algorithm. Finally, in
-\Cref{sec:future}, several potential performance improvements will be
-enumerated.
+In \Cref{sec:serial} a serial implementation of the SAD-BM algorithm will be
+described in detail. Next, the algorithm will be parallelized on the CPU using
+OpenMP (\Cref{sec:parallel-omp}) and on the GPU using Nvidia's CUDA
+(\Cref{sec:parallel-cuda}). The performance of each of these algorithms is
+evaluated in \Cref{sec:perf} and compared against two highly optimized open
+source implementations of the same algorithm. Finally, in \Cref{sec:future},
+several suggestions will be made about how to further improve the performance
+of each algorithm.
 
 \section{Serial Algorithm}
 \label{sec:serial}
@@ -76,9 +76,9 @@ expressed as
                - I_r[x_r + \Delta x, y_r + \Delta y]
            }
 \end{align*}
-where $n$ is a parameter of the SAD-BM algorithm. This definition clearly shows
-why this algorithm is named ``sum of absolute difference,'' but does not give
-any insight into how to efficiently find such pairings.
+where $n$ is the window-size parameter. This definition clearly shows why this
+algorithm is named ``sum of absolute difference,'' but does not give any
+insight into how to efficiently find such pairings.
 
 Indeed, even if the maximum disparity is known to be less than $D$, this
 algorithm requires $\Theta(whD^2)$ SAD comparisons, which is quartic in
@@ -99,7 +99,7 @@ linear performance increase.
     }
     \subfloat[LoG Transformation]{
         \includegraphics[width=0.33\textwidth]{figures/log}
-        \label{fig:images-raw}
+        \label{fig:images-log}
     }
     \subfloat[Disparity Map]{
         \includegraphics[width=0.33\textwidth]{figures/disparity}
@@ -113,16 +113,16 @@ linear performance increase.
     \label{fig:images}
 \end{figure}
 
-Rectification greatly reduces the number of pairwise comparisons that is
+Rectification greatly reduces the number of pairwise comparisons that are
 necessary and is a large performance boost, but na\"{i}vely calculating the SAD
 between two windows still requires $\Theta(n^2)$ subtractions for a total
-complexity of $\Theta(whDn^2)$. This performance can also be improved by
-preprocessing the input images to generate one SAD integral image per possible
-disparity. In general, the value of a pixel in an \textit{integral image} is
-the sum of all pixels to the top-left of that pixel, inclusive. Given an
-integral image, the area of an arbitrary rectangular region in the original can
-be found in a constant number of operations. In this case, the integral is
-computed from the horizontal components SAD errors shifted by the current
+algorithmic complexity of $\Theta(whDn^2)$. This performance can also be
+improved by preprocessing the input images to generate one SAD integral image
+per possible disparity. In general, the value of a pixel in an \textit{integral
+image} is the sum of all pixels intensities to the top-left of that pixel, inclusive. Given
+an integral image, the area of an arbitrary rectangular region in the original
+can be found in a constant number of operations. In this case, the integral is
+computed from the horizontal component of SAD errors shifted by the current
 disparity. Assuming the disparity is $d$, the SAD integral image is recursively
 defined as
 \begin{align*}
@@ -180,19 +180,19 @@ Laplacian\footnote{The Laplacian is the sum of unmixed second-order partial
 derivatives.}. This acts as a high pass filter that is robust to high-frequency
 noise and ``amplifies'' texture. As can be seen in the difference between
 \Cref{fig:images-raw,fig:images-disp}, LoG responds strongly to edges and
-weakly to regions of constant color.
+weakly to regions of constant intensity.
 
-As LoG is a convolution filter it can be evaluated as a convolution in the time
-domain or as multiplication in the frequency domain after taking the
-discrete-time Fourier transform of the source images. While performing the
-calculation in the frequency domain has better asymptotic complexity, it
-performs poorly on small images. Therefore---as is typical in image
-processing---the convolution will be directly evaluated using a ``sliding
-window'' algorithm. This algorithm has a time complexity of $\Theta(whk^2)$
-where $k$ is the width and height of the kernel. Because $k$ is constant
-parameter\footnote{Typically $k$ is small because of precision limits when
-discretizing the LoG function.}, this preprocessing step actually has a time
-complexity of $\Theta(wh)$ and does not change the overall complexity.
+The LoG is a filter that can be evaluated as convolution in the time domain or
+as multiplication in the frequency domain after taking the discrete-time
+Fourier transform of the source image. While performing the calculation in the
+frequency domain has better asymptotic complexity, it performs poorly on small
+images. Therefore---as is typical in image processing---the convolution will be
+directly evaluated using a ``sliding window'' algorithm. This algorithm has a
+time complexity of $\Theta(whk^2)$ where $k$ is the width and height of the
+kernel. Because $k$ is constant parameter\footnote{Typically $k$ is small
+because of precision limits in the discretizing the LoG function.}, this
+preprocessing step actually has effectively has time complexity of $\Theta(wh)$
+and does not change the overall complexity of the SAD-BM algorithm.
 
 This algorithm is summarized in \Cref{alg:serial} and has a total time
 complexity of $\Theta(whDn)$ where $w \times h$ are the dimensions of the two
@@ -205,41 +205,43 @@ requires a parallel implementation.
 \section{Parallelization}
 \label{sec:parallel}
 Parallelizing the SAD-BM algorithm described in \Cref{sec:serial} is
-challenging because of its several steps: (1) preprocessing, (2) integration, ,
-and (3) matching (see \Cref{fig:pipeline}). At a minimum, each of these steps
-must be independently parallelized which requires a different technique for
-each stage. Even worse, dependencies between the steps must be minimized or
-worked-around to achieve optimal performance.
+challenging because of it consists of several steps: (1) preprocessing, (2)
+integration, and (3) matching (see \Cref{fig:pipeline}). At a minimum, each
+of these steps must be independently parallelized which requires a different
+technique for each stage. Even worse, dependencies between the steps must be
+minimized or worked-around to achieve optimal performance.
 
 \begin{figure}
     \centering
     \includegraphics[width=\textwidth]{figures/pipeline}
     \caption{
-        TODO
+        High-level overview of the SAD-BM algorithm outlined in
+        \Cref{alg:serial}. Note how the preprocessing, integration, and
+        matching steps are largely independent.
     }
     \label{fig:pipeline}
 \end{figure}
 
 \subsection{OpenMP}
 \label{sec:parallel-omp}
-Modifying the serial algorithm to multiple threads is as easy as adding a few
-OpenMP preprocessor directives. However, this comes at a steep cost: it is not
-possible to intelligently ``pipeline'' the steps of the algorithm to maximize
-CPU utilization. Even so, care must still be taken to avoid race conditions,
-minimize thread overhead, and maximizing memory locality to get good cache
-performance. In particular, achieving good cache performance requires careful
-consideration of which nested loops should parallelized. 
+Modifying the serial algorithm to use multiple threads is as easy as adding a
+few OpenMP preprocessor directives. However, this comes at a steep cost: it is
+not possible to intelligently ``pipeline'' the steps of the algorithm to
+maximize CPU utilization. Even so, care must still be taken to avoid race
+conditions, minimize thread overhead, and maximizing memory locality to get
+good cache performance. In particular, achieving good cache performance
+requires careful consideration of which nested loops should parallelized. 
 
 First, consider the two-dimensional convolution required in the LoG
 transformation. Assuming all images are stored in row-major order, this can be
 done by assigning each thread a row, column, or single pixel. Given a
 sufficient number of cores, assigning each pixel a thread would be ideal.
 Unfortunately, modern CPUs have a small number of cores and the overhead of
-creating this many threads would negate any performance gain from doing
-multi-threading. Instead, the rows of the image will be partitioned into groups
-of contiguous groups by OpenMP. This allows the number of threads to be tuned
-to match the CPU's number of cores and guarantees that each thread will
-sequentially accesses memory.
+creating this many threads would negate any performance gain from doing so.
+Instead, the rows of the image will be partitioned into groups of contiguous
+groups by OpenMP and each group will be sequentially processed by a separate
+thread. This allows the number of threads to be tuned to match the CPU's number
+of cores and guarantees that each thread will sequentially accesses memory.
 
 Once the LoG transformation is complete, the next step is to compute integral
 images. Unlike with LoG, this cannot be done by partitioning the data into rows
@@ -254,27 +256,28 @@ number of non-sequential memory accesses.
 
 Once the integral images have been pre-computed, the disparity of each pixel
 can be independently computed and stored in the disparity map. For the same
-reason as with LoG, the integral images will be partitioned into rows for this
-calculation. Again, since each of these operations can be parallelized with no
-additional synchronization. Each of these steps should have a linear speedup,
-but the overall algorithm will still be subject to diminishing returns. This is
-because of the unavoidable, constant overhead in waiting for threads to
-synchronize between each step in the algorithm.
+reason as with LoG, the integral images will be partitioned into groups of rows
+an assigned separate threads for this calculation. Again, since each of these
+operations can be parallelized with no additional synchronization. Each of
+these steps should have a linear speedup, but the overall algorithm will still
+be subject to diminishing returns. This is because of the unavoidable, constant
+overhead in waiting for threads to synchronize between each step in the
+algorithm.
 
 \subsection{Nvidia CUDA}
 \label{sec:parallel-cuda}
 Unlike OpenMP's CPU threads, which are high overhead, parallelizing an
 algorithm on a GPGPU with Nvidia's CUDA architecture allows for massive
-parallelism with zero-overhead threads and SIMD instructions.  However, this
+parallelism, zero-overhead threads, and SIMD instructions.  However, this
 performance comes at a cost: memory transfers between the CPU and GPU are very
 slow and must be minimized at all costs ~\cite{cuda}. This means that the
 stereo pair is transferred to the GPU as a single unit, all processing should
 occur on the GPU, then the resulting disparity map is copied back to the CPU as
 a single operation. In addition, care must be taken when choosing block sizes
-to minimize the number of idle data paths in each CUDA core.
+to minimize the number of idle SIMD data paths in each CUDA core.
 
 Once the stereo pair has been transferred to the GPU, LoG is very easy to
-parallelize : each pixel in the image is assigned a thread and the entire
+parallelize: each pixel in the image is assigned a thread and the entire
 filtered image is generated in parallel. While this would be very inefficient
 on the CPU because of the overhead of traditional threads, this is ideal for
 the massively parallel architecture and zero-overhead threads available on the
@@ -284,11 +287,13 @@ threads per block must be a multiple of the warp size ~\cite{cuda}, $W$, which
 is the number of SIMD data paths on each CUDA core. To minimize the number of
 memory accesses---the slowest operation---per block, this was done by
 partitioning the image into blocks of size $\floor{\sqrt{W}} \times
-\floor{\sqrt{W}}$. This guarantees that memory accesses overlap as much as possible within each block and that each block contains approximately $W$ threads.
+\floor{\sqrt{W}}$. This guarantees that memory accesses overlap as much as
+possible within each block and that each block contains approximately $W$
+threads.
 
 Once the LoG of both input images have been calculated, the next step is to
 compute the integral images. This can be done using the same technique as
-described in \Cref{sec:omp}; i.e. by first computing the horizontal SAD, then
+described in \Cref{sec:parallel-omp}; i.e. by first computing the horizontal SAD, then
 summing along columns in the resulting image. Computing the horizontal SAD can
 be done using square blocks of size $\floor{\sqrt{W}} \times \floor{\sqrt{W}}$
 and the same partitioning scheme as described above. Summing the image
@@ -343,7 +348,7 @@ suffers from diminishing returns consistent with Amdahl's law, which states
 that the maximum speedup of an algorithm is limited by the sections of the
 algorithm that cannot be serialized. In this case, much of that overhead is
 caused by splitting the algorithm into several smaller stages and could be
-improved by pipelining the calculating so the stages can run in
+improved by pipelining the calculation such that stages can run in
 parallel---something that is not possible with OpenMP (see \Cref{sec:future}
 for details).
 
@@ -360,17 +365,18 @@ for details).
 \end{figure}
 
 Overall, the OpenMP parallelization gave a large performance increase without
-adding any complexity: parallelizing the serial algorithm with OpenMP only
-required adding three preprocessor directives! Despite this boost in
-performance, this algorithm runs 6.15 times slower than the OpenCV
-implementation (\Cref{fig:perf-comp}). The impressive performance of OpenCV can
-be attributed to three factors: (1) utilizing architecture-specific
-instructions, (2) managing threads at a lower level, and (3) hand optimization
-of inner loops.  In particular, OpenCV SAD-BM makes heavy use of Streaming SIMD
-Extensions (SSE2) to perform multiple arithmetic operations in each clock
-cycle. Combined with manually-controlled thread synchronization using Intel's
-Thread Building Blocks (TBB) and loop unrolling, this easily accounts for the
-performance difference.
+adding any complexity: parallelizing the serial algorithm only required adding
+three preprocessor directives! Despite this boost in performance, this
+algorithm runs 6.15 times slower than the OpenCV implementation
+(\Cref{fig:perf-comp}). The impressive performance of OpenCV can be attributed
+to three factors: (1) utilizing architecture-specific instructions, (2)
+managing threads at a lower level, and (3) hand optimization of inner loops.
+In particular, OpenCV SAD-BM makes heavy use of Streaming SIMD Extensions
+(SSE2) to perform multiple arithmetic operations in each clock cycle. This is a
+significant performance boost: Konolige~\cite{konolige97} notes that the
+algorithm is roughly four times faster on CPUs that support SSE2. Combined with
+low-level thread management using Intel's Thread Building Blocks (TBB) and the
+hand-unrolling of loops, this easily accounts for the performance difference.
 
 Also as expected, the CUDA-accelerated SAD-BM algorithm is 2.71 times faster
 than the OpenMP parallelized CPU algorithm. This is because the SAD-BM
@@ -378,7 +384,7 @@ algorithm---like many computer vision algorithms---is particularly well-suited
 for massive parallelism. This speedup is lower than, but comparable to,
 OpenCV's 7.37 times performance increase from the CPU and GPU algorithms. This
 performance difference is harder to attribute, but is most likely from
-intelligent use of CUDA streams and, similar to the CPU implementing, manual
+intelligent use of CUDA streams and, similar to the CPU implementing, and manual
 loop unrolling. Using streams allow for more operations to be executed in
 parallel, which is exceptionally important when working on powerful GPGPUs that
 have a large number of CUDA cores such as the Nvidia Tesla C2070 used for
@@ -394,7 +400,7 @@ OpenMP-parallelized algorithm with one thread is exactly identical to running
 the serial algorithm! Note, however, that this implementation is heavily
 affected by the number of available CPU cores. While the performance is
 excellent on a 24-core machine (such as that used for evaluation), it will
-likely be disappointing on more common dual or quad core machines.
+likely be less impressive on more common dual or quad core machines.
 
 The ease of parallelizing SAD-BM with OpenMP is in contrast to the difficultly
 in parallelizing the same algorithm with CUDA. Implementing the algorithm as a
@@ -403,35 +409,36 @@ and carefully selecting optimal block sizes. The performance payoff, however,
 is clear; if a high end GPGPU is available and performance is critical, then
 GPU acceleration cannot be matched. Both of the CUDA-accelerated
 implementations outperformed their corresponding multi-threaded CPU
-implementations. This is especially important when the CPU is under heavy load
-because any calculations done on the GPU free additional CPU time for other
-tasks. One example of this would be for a mobile robot to offload stereo vision
-calculations to its GPU while the CPU is responsible for path planning, a task
-that does not lend itself to massive parallelism.
+implementations by a substantial margin. This is especially important when the
+CPU is under heavy load because any calculations done on the GPU frees
+additional CPU time for other tasks. One example of this would be for a mobile
+robot to offload stereo vision calculations to its GPU while the CPU is
+responsible for path planning, a task that does not lend easily lend itself to
+massive parallelism.
 
 \section{Future Work}
 \label{sec:future}
 From the comparison with OpenCV, there are obviously improvements that would
-improve the performance of both of the custom implementations. On the CPU this
+improve the performance of both custom implementations. On the CPU this
 would involve: (1) using SSE2 to perform multiple arithmetic calculations per
 clock cycle, (2) manually unroll tight loops to reduce overhead, and (3)
 switching to a lower-level threading library to reduce the amount of
 synchronization. On modern processors, the SSE4.1 SIMD instructions for SAD
 calculation could be used to even greater effect by allowing an $8 \times 8$
 SAD window to calculated in less than eight clock cycles. These instructions
-are not used in OpenCV, so this is a potential performance increase that could
-surpass OpenCV's current speed.
+are not used in OpenCV, so this is a potential performance increase that may
+even surpass OpenCV's current speed.
 
 Optimizations are less obvious on the GPU. Most importantly, the code should be
 modified to use CUDA streams to pipeline operations and minimize the number of
 synchronization points. Another major optimization would be to replace some
-custom code, such as the LoG convolution, with algorithms from \textit{NVidia
-Performance Primitives} (NPP), a highly optimized library of common algorithms.
-At a lower level, performance could be improved by padding images to be a
-multiple of the block size and manually unrolling loops to minimize bounds
-checking in the kernels. Together, these improvements would close the gap
-between the performance of these custom implementations of SAD-BM and the
-highly optimized, open source implementations in OpenCV.
+custom code, such as the LoG convolution, with algorithms from \textit{Nvidia
+Performance Primitives} (NPP), a highly optimized library of common algorithms
+such as convolution.  At a lower level, performance could be improved by
+padding images to be a multiple of the block size and manually unrolling loops
+to minimize bounds checking in the kernels. Together, these improvements would
+close the gap between the performance of these custom implementations of SAD-BM
+and the highly optimized, open source implementations in OpenCV.
 
 \bibliography{report}{}
 \bibliographystyle{plain}
